@@ -5,8 +5,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Release-v1.3.0-blue?style=flat-square&logo=github" alt="Release">
+  <img src="https://img.shields.io/badge/Fork-v1.4.0--fork.1-blue?style=flat-square&logo=github" alt="衍生版本">
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" alt="License">
+  <a href="https://github.com/chenYJ2000/Chat2API/actions/workflows/ci.yml"><img src="https://github.com/chenYJ2000/Chat2API/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <br>
   <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-33+-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron"></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React"></a>
@@ -26,6 +27,13 @@
   Chat2API 通过驱动各大模型的官方 Web UI，实现 0 成本接入主流 AI 大模型。支持 DeepSeek、GLM、Kimi、MiniMax、Qwen、Z.ai 等渠道，可无缝连接 openlcaw、Cline、Roo-Code 等工具，让任何 OpenAI 兼容客户端即刻可用。
 </p>
 
+> [!IMPORTANT]
+> 本仓库是在原项目 [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API)
+> 基础上维护的增强衍生版本。衷心感谢原作者
+> [xiaoY233](https://github.com/xiaoY233) 与所有原项目贡献者创建并开源 Chat2API。
+> 本仓库保留完整原始 Git 历史、版权声明和 GPL-3.0 许可证。请查看
+> [本衍生版本完整变更说明](FORK_CHANGES.md) 与 [NOTICE](NOTICE)。
+
 ![Product Preview](docs/screenshots/preview.png)
 
 ## ✨ 功能特性
@@ -40,6 +48,8 @@
 - API Key 管理：为本地代理生成和管理密钥
 - 模型管理：查看和管理所有服务商的可用模型
 - 请求日志：详细的请求日志记录，便于调试和分析
+- Qwen 安全执行：明确的快速/思考模式、严格工具参数校验，并安全拒绝模型错误输出
+- 可靠故障转移：错误分类、多账号切换、SSE 并发隔离与最终实际账号统计
 - 代理配置：灵活的代理设置和路由策略
 - 系统托盘集成：从菜单栏快速访问状态
 - 多语言支持：支持英文和简体中文
@@ -63,16 +73,11 @@
 
 ## 📥 安装
 
-### 下载安装
+### 衍生版本发布
 
-从 [GitHub Releases](https://github.com/xiaoY233/Chat2API/releases) 下载最新版本：
-
-| 平台                    | 下载文件                                   |
-| --------------------- | -------------------------------------- |
-| macOS (Apple Silicon) | `Chat2API-x.x.x-arm64.dmg`             |
-| macOS (Intel)         | `Chat2API-x.x.x-x64.dmg`               |
-| Windows               | `Chat2API-x.x.x-x64-setup.exe`         |
-| Linux                 | `Chat2API-x.x.x-x64.AppImage` 或 `.deb` |
+本衍生版本当前仅发布源码，尚未提供包含这些增强的预编译安装包。
+[原项目 Releases](https://github.com/xiaoY233/Chat2API/releases) 中是上游版本安装包，
+**不包含**本文记录的衍生版本增强。需要这些改动时，请按下文从源码构建。
 
 ### 从源码构建
 
@@ -84,7 +89,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/xiaoY233/Chat2API.git
+git clone https://github.com/chenYJ2000/Chat2API.git
 cd Chat2API
 
 # 安装依赖
@@ -242,7 +247,7 @@ sudo xattr -rd com.apple.quarantine "/Applications/Chat2API.app"
 
 ### 如何更新？
 
-在 **关于** 页面检查更新，或从 [GitHub Releases](https://github.com/xiaoY233/Chat2API/releases) 下载最新版本。
+应用内更新来源由构建维护者配置。原项目安装包不包含本衍生版本增强；源码用户应从本仓库拉取更新并重新构建。
 
 ## 🤝 贡献
 
@@ -256,6 +261,9 @@ sudo xattr -rd com.apple.quarantine "/Applications/Chat2API.app"
 
 GNU 通用公共许可证 v3.0。详见 [LICENSE](LICENSE)。
 
+原项目署名及衍生关系见 [NOTICE](NOTICE)，本版本的完整改动见
+[FORK_CHANGES.md](FORK_CHANGES.md)。
+
 这意味着：
 
 - ✅ 可以自由使用、修改和分发
@@ -264,6 +272,7 @@ GNU 通用公共许可证 v3.0。详见 [LICENSE](LICENSE)。
 
 ## 🙏 致谢
 
+- [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API) — 本项目的原始基础。特别感谢原作者 xiaoY233 和所有原项目贡献者。
 - [Electron](https://www.electronjs.org/) - 跨平台框架
 - [React](https://react.dev/) - UI 框架
 - [TypeScript](https://www.typescriptlang.org/) - 类型安全的 JavaScript

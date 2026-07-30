@@ -9,6 +9,7 @@ import { PassThrough } from 'stream'
 import { Account, Provider } from '../store/types'
 import { ForwardResult, ChatCompletionRequest, ProxyContext } from './types'
 import { proxyStatusManager } from './status'
+import { loadBalancer } from './loadbalancer'
 import { storeManager } from '../store/store'
 import { DeepSeekAdapter } from './adapters/deepseek'
 import { DeepSeekStreamHandler } from './adapters/deepseek-stream'
@@ -16,13 +17,22 @@ import { GLMAdapter, GLMStreamHandler } from './adapters/glm'
 import { KimiAdapter, KimiStreamHandler } from './adapters/kimi'
 import { MimoAdapter, MimoStreamHandler } from './adapters/mimo'
 import { QwenAdapter, QwenStreamHandler } from './adapters/qwen'
-import { QwenAiAdapter, QwenAiStreamHandler } from './adapters/qwen-ai'
+import {
+  QwenAiAdapter,
+  QwenAiRequestValidationError,
+  QwenAiStreamHandler,
+} from './adapters/qwen-ai'
 import { ZaiAdapter, ZaiStreamHandler } from './adapters/zai'
 import { MiniMaxAdapter, MiniMaxStreamHandler } from './adapters/minimax'
 import { PerplexityAdapter } from './adapters/perplexity'
 import { PerplexityStreamHandler } from './adapters/perplexity-stream'
-import { ToolCallingEngine } from './toolCalling/ToolCallingEngine'
+import {
+  isToolCallingResponseErrorMessage,
+  ToolCallingEngine,
+  ToolCallingResponseError,
+} from './toolCalling/ToolCallingEngine'
 import type { ToolCallingTransformResult } from './toolCalling/types'
+import { isReasoningEnabled } from './utils/reasoning'
 import { sessionManager } from './sessionManager'
 import {
   createContextManagementService,
@@ -32,6 +42,48 @@ import {
 
 function shouldDeleteSession(): boolean {
   return sessionManager.shouldDeleteAfterChat()
+}
+
+function getForwardErrorStatus(error: unknown): number | undefined {
+  if (error instanceof QwenAiRequestValidationError) return 400
+  if (error instanceof ToolCallingResponseError) return error.status
+  if (axios.isAxiosError(error)) return error.response?.status
+
+  if (error && typeof error === 'object' && 'status' in error) {
+    const status = Number((error as { status?: unknown }).status)
+    if (Number.isInteger(status) && status >= 400 && status <= 599) return status
+  }
+
+  return undefined
+}
+
+function getForwardErrorMessageStatus(message?: string): number | undefined {
+  if (!message) return undefined
+  if (isToolCallingResponseErrorMessage(message)) return 502
+
+  const match = /(?:HTTP|status(?: code)?)\s*[:=]?\s*([45]\d\d)/i.exec(message)
+  return match ? Number(match[1]) : undefined
+}
+
+function isRetryableStatus(status: number | undefined, error?: string): boolean {
+  if (isToolCallingResponseErrorMessage(error)) return false
+  return status === undefined
+    || status === 401
+    || status === 403
+    || status === 408
+    || status === 409
+    || status === 425
+    || status === 429
+    || status >= 500
+}
+
+function shouldMarkAccountFailed(status: number | undefined, error?: string): boolean {
+  if (isToolCallingResponseErrorMessage(error)) return false
+  return status === undefined
+    || status === 401
+    || status === 403
+    || status === 429
+    || (status !== undefined && status >= 500)
 }
 
 type ProviderForwarder = {
@@ -147,6 +199,67 @@ export class RequestForwarder {
     engine.applyNonStreamResponse(result, transformed.plan)
   }
 
+  private createBufferedResponseStream(result: any, model: string): PassThrough {
+    const stream = new PassThrough()
+    const choice = result?.choices?.[0] ?? {}
+    const message = choice.message ?? {}
+    const responseId = result?.id || `chatcmpl-${Date.now().toString(36)}`
+    const created = result?.created || Math.floor(Date.now() / 1000)
+    const baseChunk = {
+      id: responseId,
+      model,
+      object: 'chat.completion.chunk',
+      created,
+    }
+
+    queueMicrotask(() => {
+      stream.write(`data: ${JSON.stringify({
+        ...baseChunk,
+        choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+      })}\n\n`)
+
+      if (message.reasoning_content) {
+        stream.write(`data: ${JSON.stringify({
+          ...baseChunk,
+          choices: [{
+            index: 0,
+            delta: { reasoning_content: message.reasoning_content },
+            finish_reason: null,
+          }],
+        })}\n\n`)
+      }
+
+      if (message.content) {
+        stream.write(`data: ${JSON.stringify({
+          ...baseChunk,
+          choices: [{ index: 0, delta: { content: message.content }, finish_reason: null }],
+        })}\n\n`)
+      }
+
+      for (const [index, toolCall] of (message.tool_calls ?? []).entries()) {
+        const { rawText, ...publicToolCall } = toolCall
+        void rawText
+        stream.write(`data: ${JSON.stringify({
+          ...baseChunk,
+          choices: [{
+            index: 0,
+            delta: { tool_calls: [{ ...publicToolCall, index }] },
+            finish_reason: null,
+          }],
+        })}\n\n`)
+      }
+
+      stream.write(`data: ${JSON.stringify({
+        ...baseChunk,
+        choices: [{ index: 0, delta: {}, finish_reason: choice.finish_reason || 'stop' }],
+        ...(result?.usage && { usage: result.usage }),
+      })}\n\n`)
+      stream.end('data: [DONE]\n\n')
+    })
+
+    return stream
+  }
+
   /**
    * Create summary generator function for context management
    * Uses the current provider and account to generate summaries
@@ -232,20 +345,19 @@ export class RequestForwarder {
     const maxRetries = config.retryCount
 
     let lastError: string | undefined
+    let lastStatus: number | undefined
+    let currentSelection = { account, provider, actualModel }
+    const attemptedAccountIds = new Set<string>()
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      if (attempt > 0) {
-        await this.delay(5000)
-      }
-
       let modifiedRequest = request
 
       if (config.contextManagement?.enabled && modifiedRequest.messages && modifiedRequest.messages.length > 0) {
         try {
           const summaryGenerator = this.createSummaryGenerator(
-            account,
-            provider,
-            actualModel,
+            currentSelection.account,
+            currentSelection.provider,
+            currentSelection.actualModel,
             context
           )
 
@@ -290,26 +402,67 @@ export class RequestForwarder {
       }
 
       try {
-        const result = await this.doForward(modifiedRequest, account, provider, actualModel, context)
+        const result = await this.doForward(
+          modifiedRequest,
+          currentSelection.account,
+          currentSelection.provider,
+          currentSelection.actualModel,
+          context,
+        )
 
         if (result.success) {
-          return result
+          return { ...result, selection: currentSelection }
         }
 
         lastError = result.error
-
-        if (result.status && result.status < 500 && result.status !== 429) {
-          break
-        }
+        lastStatus = result.status ?? getForwardErrorMessageStatus(result.error)
       } catch (error) {
         lastError = error instanceof Error ? error.message : 'Unknown error'
+        lastStatus = getForwardErrorStatus(error)
+      }
+
+      if (!isRetryableStatus(lastStatus, lastError) || attempt >= maxRetries) {
+        if (shouldMarkAccountFailed(lastStatus, lastError)) {
+          loadBalancer.markAccountFailed(currentSelection.account.id)
+        }
+        break
+      }
+
+      if (shouldMarkAccountFailed(lastStatus, lastError)) {
+        loadBalancer.markAccountFailed(currentSelection.account.id)
+      }
+
+      attemptedAccountIds.add(currentSelection.account.id)
+      const nextSelection = loadBalancer.selectAccount(
+        request.model,
+        config.loadBalanceStrategy,
+        currentSelection.provider.id,
+        undefined,
+        attemptedAccountIds,
+      )
+
+      if (nextSelection) {
+        storeManager.addLog('warn', 'Retrying request with another account', {
+          requestId: context.requestId,
+          providerId: nextSelection.provider.id,
+          accountId: nextSelection.account.id,
+          model: request.model,
+        })
+        currentSelection = nextSelection
+      } else {
+        // Every matching account has been tried. Retrying the last account can
+        // still recover from a transient provider-wide outage.
+        attemptedAccountIds.clear()
+        await this.delay(proxyStatusManager.getConfig().retryDelay || 5000)
       }
     }
 
     return {
       success: false,
+      status: lastStatus,
       error: lastError || 'Request failed after retries',
       latency: Date.now() - startTime,
+      selection: currentSelection,
     }
   }
 
@@ -637,7 +790,7 @@ export class RequestForwarder {
         messages: transformed.messages,
         stream: request.stream,
         temperature: request.temperature,
-        enableThinking: !!request.reasoning_effort,
+        enableThinking: isReasoningEnabled(request.reasoning_effort),
         enableWebSearch: !!request.web_search,
       })
 
@@ -653,7 +806,12 @@ export class RequestForwarder {
         }
       }
 
-      const handler = new KimiStreamHandler(actualModel, conversationId, !!request.reasoning_effort, transformed.plan)
+      const handler = new KimiStreamHandler(
+        actualModel,
+        conversationId,
+        isReasoningEnabled(request.reasoning_effort),
+        transformed.plan,
+      )
       
       if (request.stream) {
         const transformedStream = await handler.handleStream(response.data)
@@ -737,14 +895,14 @@ export class RequestForwarder {
         messages: transformedRequest.messages as any,
         stream: request.stream,
         temperature: request.temperature,
-        enableThinking: !!request.reasoning_effort,
+        enableThinking: isReasoningEnabled(request.reasoning_effort),
         enableWebSearch: !!request.web_search,
       })
 
       const latency = Date.now() - startTime
 
       if (response.status >= 400) {
-        let errorMessage = `HTTP ${response.status}`
+        const errorMessage = `HTTP ${response.status}`
         return {
           success: false,
           status: response.status,
@@ -826,13 +984,21 @@ export class RequestForwarder {
         messages: transformed.messages as any,
         stream: request.stream,
         temperature: request.temperature,
-        enable_thinking: !!request.reasoning_effort,
+        enable_thinking: request.enable_thinking,
+        thinking_budget: request.thinking_budget,
+        reasoning_effort: request.reasoning_effort,
+        max_tokens: request.max_tokens,
+        max_completion_tokens: request.max_completion_tokens,
       })
 
       const latency = Date.now() - startTime
 
       if (response.status >= 400) {
-        let errorMessage = `HTTP ${response.status}`
+        const errorMessage = `HTTP ${response.status}`
+        if (typeof response.data?.destroy === 'function') response.data.destroy()
+        if (shouldDeleteSession()) {
+          await adapter.deleteChat(chatId)
+        }
         return {
           success: false,
           status: response.status,
@@ -841,21 +1007,38 @@ export class RequestForwarder {
         }
       }
 
-      const handler = new QwenAiStreamHandler(actualModel)
+      const deleteChatCallback = shouldDeleteSession()
+        ? (completedChatId: string) => {
+            void adapter.deleteChat(completedChatId).catch(err => {
+              console.error('[QwenAI] Failed to delete chat:', err)
+            })
+          }
+        : undefined
+      const handler = new QwenAiStreamHandler(actualModel, deleteChatCallback, {
+        maxTokens: request.max_tokens,
+        maxCompletionTokens: request.max_completion_tokens,
+      })
       handler.setChatId(chatId)
 
       if (request.stream) {
-        const transformedStream = await handler.handleStream(response.data)
-
-        if (shouldDeleteSession()) {
-          const originalEnd = transformedStream.end.bind(transformedStream)
-          transformedStream.end = function(chunk?: any, encoding?: any, callback?: any) {
-            adapter.deleteChat(chatId).catch(err => {
-              console.error('[QwenAI] Failed to delete chat:', err)
-            })
-            return originalEnd(chunk, encoding, callback)
+        // Managed tool output must be parsed as one complete response before
+        // emitting OpenAI tool-call deltas. Otherwise Qwen's XML markers leak
+        // through as ordinary streamed content.
+        if (transformed.plan.shouldParseResponse) {
+          const bufferedResult = await handler.handleNonStream(response.data)
+          this.applyToolCallsToResponse(bufferedResult, transformed)
+          return {
+            success: true,
+            status: response.status,
+            headers: this.extractHeaders(response.headers),
+            stream: this.createBufferedResponseStream(bufferedResult, actualModel),
+            skipTransform: true,
+            latency: Date.now() - startTime,
+            providerSessionId: chatId,
           }
         }
+
+        const transformedStream = await handler.handleStream(response.data)
 
         return {
           success: true,
@@ -872,10 +1055,6 @@ export class RequestForwarder {
 
       this.applyToolCallsToResponse(result, transformed)
 
-      if (shouldDeleteSession()) {
-        await adapter.deleteChat(chatId)
-      }
-
       return {
         success: true,
         status: response.status,
@@ -888,6 +1067,7 @@ export class RequestForwarder {
       const latency = Date.now() - startTime
       return {
         success: false,
+        status: getForwardErrorStatus(error),
         error: error instanceof Error ? error.message : 'Unknown error',
         latency,
       }

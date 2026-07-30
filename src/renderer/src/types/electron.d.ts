@@ -342,7 +342,7 @@ interface RequestLogEntry {
   /** Web search enabled */
   webSearch?: boolean
   /** Reasoning effort level */
-  reasoningEffort?: 'low' | 'medium' | 'high'
+  reasoningEffort?: string | boolean
   responseStatus: number
   responsePreview?: string
   /** Response body JSON string */

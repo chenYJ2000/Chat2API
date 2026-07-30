@@ -1,17 +1,35 @@
 {
   "name": "chat2api",
-  "version": "1.4.0",
+  "version": "1.4.0-fork.1",
   "description": "Chat2API 管理器 - 统一管理多个 AI 服务提供商，提供 OpenAI 兼容 API 接口",
   "main": "./out/main/index.js",
   "author": {
     "name": "Chat2API Team",
     "email": "support@chat2api.com"
   },
-  "homepage": "https://github.com/chat2api/Chat2API-Manager",
+  "contributors": [
+    {
+      "name": "xiaoY233 and the upstream Chat2API contributors",
+      "url": "https://github.com/xiaoY233/Chat2API/graphs/contributors"
+    },
+    {
+      "name": "chenYJ2000",
+      "url": "https://github.com/chenYJ2000"
+    }
+  ],
+  "homepage": "https://github.com/chenYJ2000/Chat2API#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenYJ2000/Chat2API.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chenYJ2000/Chat2API/issues"
+  },
   "license": "GPL-3.0",
   "scripts": {
     "dev": "bash scripts/dev.sh",
     "dev:win": "electron-vite dev",
+    "test": "node scripts/run-tests.mjs",
     "check:source-artifacts": "node scripts/check-source-artifacts.js",
     "build": "npm run check:source-artifacts && electron-vite build",
     "preview": "electron-vite preview",
@@ -43,17 +61,19 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-toast": "^1.2.15",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "ali-oss": "^6.23.0",
-    "axios": "^1.7.7",
+    "axios": "^1.19.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "electron-store": "^10.0.0",
-    "electron-updater": "^6.3.9",
+    "electron-updater": "^6.8.9",
     "eventsource-parser": "^3.0.6",
     "i18next": "^25.8.11",
     "i18next-browser-languagedetector": "^8.2.1",
     "js-sha3": "^0.9.3",
-    "koa": "^2.15.3",
+    "koa": "^2.16.4",
     "koa-bodyparser": "^4.4.1",
     "koa-router": "^12.0.1",
     "lucide-react": "^0.454.0",
@@ -85,6 +105,7 @@
     "electron-vite": "^2.3.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
+    "tsx": "^4.23.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.10"
   },
@@ -240,7 +261,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "xiaoY233",
+      "owner": "chenYJ2000",
       "repo": "Chat2API"
     }
   }

@@ -604,6 +604,7 @@
     "errorMessage": "错误信息",
     "stackTrace": "堆栈跟踪",
     "noRequestData": "暂无请求数据",
+    "noBodyDataHelp": "该条日志未保存正文。请在设置的数据管理中开启“保存请求体与响应体”；开启后仅对新请求生效。",
     "noUserInput": "暂无用户输入",
     "noError": "暂无错误",
     "tabInfo": "信息",

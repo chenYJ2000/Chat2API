@@ -8,6 +8,7 @@ import crypto from 'crypto'
 import { Account, Provider } from '../../store/types'
 import { storeManager } from '../../store/store'
 import { PassThrough } from 'stream'
+import { isReasoningEnabled } from '../utils/reasoning'
 import { createParser } from 'eventsource-parser'
 import FormData from 'form-data'
 import mime from 'mime-types'
@@ -493,7 +494,7 @@ GLM STRICT RULES:
     let isNetworking = false
 
     // Use request parameters for mode control (OpenAI compatible)
-    if (request.reasoning_effort) {
+    if (isReasoningEnabled(request.reasoning_effort)) {
       chatMode = 'zero'
       console.log('[GLM] Using reasoning mode, effort:', request.reasoning_effort)
     }

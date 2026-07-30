@@ -604,6 +604,7 @@
     "errorMessage": "Error Message",
     "stackTrace": "Stack Trace",
     "noRequestData": "No request data",
+    "noBodyDataHelp": "No body was stored for this entry. Enable Persist Bodies under Data Management; the change applies to new requests only.",
     "noUserInput": "No user input",
     "noError": "No error",
     "tabInfo": "Info",

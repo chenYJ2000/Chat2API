@@ -5,8 +5,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Release-v1.3.0-blue?style=flat-square&logo=github" alt="Release">
+  <img src="https://img.shields.io/badge/Fork-v1.4.0--fork.1-blue?style=flat-square&logo=github" alt="Fork version">
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" alt="License">
+  <a href="https://github.com/chenYJ2000/Chat2API/actions/workflows/ci.yml"><img src="https://github.com/chenYJ2000/Chat2API/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <br>
   <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-33+-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron"></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React"></a>
@@ -26,6 +27,13 @@
   Chat2API enables zero-cost access to leading AI models by leveraging official web UIs. It supports providers such as DeepSeek, GLM, Kimi, MiniMax, Qwen, and Z.ai, and seamlessly integrates with tools like openlcaw, Cline, and Roo-Code — making any OpenAI-compatible client work out of the box.
 </p>
 
+> [!IMPORTANT]
+> This repository is an enhanced fork of the original
+> [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API). Sincere thanks to
+> [xiaoY233](https://github.com/xiaoY233) and every upstream contributor for creating and
+> open-sourcing Chat2API. The original Git history, copyright notice, and GPL-3.0 license
+> are retained. See the [complete fork change list](FORK_CHANGES.md) and [NOTICE](NOTICE).
+
 ![Product Preview](docs/screenshots/preview.png)
 
 ## ✨ Features
@@ -40,6 +48,8 @@
 - API Key Management: Generate and manage keys for your local proxy
 - Model Management: View and manage available models from all providers
 - Request Logs: Detailed request logging for debugging and analysis
+- Safer Qwen Execution: Explicit fast/thinking modes, strict tool argument validation, and safe rejection of malformed model output
+- Reliable Failover: Retry classification, multi-account failover, isolated SSE parsing, and accurate final-account statistics
 - Proxy Configuration: Flexible proxy settings and routing strategies
 - System Tray Integration: Quick access to status from menu bar
 - Multilingual: English and Simplified Chinese support
@@ -63,16 +73,13 @@ Provider adaptation notes and manual model-addition guides are in [docs/provider
 
 ## 📥 Installation
 
-### Download
+### Fork Releases
 
-Download the latest release from [GitHub Releases](https://github.com/xiaoY233/Chat2API/releases):
-
-| Platform              | Download                                |
-| --------------------- | --------------------------------------- |
-| macOS (Apple Silicon) | `Chat2API-x.x.x-arm64.dmg`              |
-| macOS (Intel)         | `Chat2API-x.x.x-x64.dmg`                |
-| Windows               | `Chat2API-x.x.x-x64-setup.exe`          |
-| Linux                 | `Chat2API-x.x.x-x64.AppImage` or `.deb` |
+This fork currently publishes source code only; no fork-specific prebuilt binaries are
+available yet. The
+[original project releases](https://github.com/xiaoY233/Chat2API/releases) contain upstream
+binaries and do **not** include the fork-specific changes documented here. To use this
+fork's changes, build from source below.
 
 ### Build from Source
 
@@ -84,7 +91,7 @@ Download the latest release from [GitHub Releases](https://github.com/xiaoY233/C
 
 ```bash
 # Clone the repository
-git clone https://github.com/xiaoY233/Chat2API.git
+git clone https://github.com/chenYJ2000/Chat2API.git
 cd Chat2API
 
 # Install dependencies
@@ -242,7 +249,9 @@ sudo xattr -rd com.apple.quarantine "/Applications/Chat2API.app"
 
 ### How to update?
 
-Check for updates in the **About** page, or download the latest version from [GitHub Releases](https://github.com/xiaoY233/Chat2API/releases).
+The in-app updater follows the repository configured by the build maintainer. Original
+upstream releases do not include this fork's enhancements; source users should pull this
+repository and rebuild.
 
 ## 🤝 Contributing
 
@@ -256,6 +265,9 @@ Check for updates in the **About** page, or download the latest version from [Gi
 
 GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
 
+Upstream attribution and the relationship to the original project are recorded in
+[NOTICE](NOTICE). Fork-specific changes are listed in [FORK_CHANGES.md](FORK_CHANGES.md).
+
 This means:
 
 - ✅ Free to use, modify, and distribute
@@ -264,6 +276,7 @@ This means:
 
 ## 🙏 Acknowledgments
 
+- [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API) — the original project. Special thanks to original author xiaoY233 and all upstream contributors.
 - [Electron](https://www.electronjs.org/) - Cross-platform framework
 - [React](https://react.dev/) - UI framework
 - [TypeScript](https://www.typescriptlang.org/) - Type-safe JavaScript

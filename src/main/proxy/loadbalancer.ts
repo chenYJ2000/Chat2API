@@ -60,9 +60,10 @@ export class LoadBalancer {
     model: string,
     strategy: LoadBalanceStrategy = 'round-robin',
     preferredProviderId?: string,
-    preferredAccountId?: string
+    preferredAccountId?: string,
+    excludedAccountIds: ReadonlySet<string> = new Set(),
   ): AccountSelection | null {
-    const candidates = this.getAvailableAccounts(model, preferredProviderId, strategy === 'failover')
+    const candidates = this.getAvailableAccounts(model, preferredProviderId, excludedAccountIds)
 
     if (candidates.length === 0) {
       return null
@@ -92,7 +93,7 @@ export class LoadBalancer {
   private getAvailableAccounts(
     model: string,
     preferredProviderId?: string,
-    excludeFailed: boolean = false
+    excludedAccountIds: ReadonlySet<string> = new Set(),
   ): AccountSelection[] {
     const providers = storeManager.getProviders().filter(p => p.enabled)
     const candidates: AccountSelection[] = []
@@ -108,12 +109,13 @@ export class LoadBalancer {
 
       const accounts = storeManager.getAccountsByProviderId(provider.id, true)
         .filter(account => this.isAccountAvailable(account))
-        .filter(account => !excludeFailed || !this.isAccountInFailure(account.id))
+        .filter(account => !this.isAccountInFailure(account.id))
+        .filter(account => !excludedAccountIds.has(account.id))
 
       console.log(`[LoadBalancer] Provider ${provider.name} (${provider.id}) has ${accounts.length} available accounts`)
 
       for (const account of accounts) {
-        console.log(`[LoadBalancer] Account ${account.name} (${account.id}) Token: ${(account.credentials.token || '').substring(0, 20)}...`)
+        console.log(`[LoadBalancer] Account ${account.name} (${account.id}) is available`)
         candidates.push({
           account,
           provider,
@@ -134,7 +136,8 @@ export class LoadBalancer {
       return true
     }
 
-    const normalizedModel = model.toLowerCase()
+    const { baseModel } = splitQwenModeSuffix(provider, model)
+    const normalizedModel = baseModel.toLowerCase()
     const supported = effectiveModels.some(m => {
       const normalizedSupported = m.displayName.toLowerCase()
       if (normalizedSupported.endsWith('*')) {
@@ -148,7 +151,7 @@ export class LoadBalancer {
     }
 
     const config = storeManager.getConfig()
-    const globalMapping = config.modelMappings[model]
+    const globalMapping = config.modelMappings[model] ?? config.modelMappings[baseModel]
     if (globalMapping) {
       if (globalMapping.preferredProviderId) {
         if (globalMapping.preferredProviderId === provider.id) {
@@ -198,19 +201,20 @@ export class LoadBalancer {
    */
   private mapModel(model: string, provider: Provider): string {
     console.log(`[LoadBalancer] mapModel called with model="${model}", provider="${provider.name}"`)
-    
+
+    const { baseModel, suffix } = splitQwenModeSuffix(provider, model)
     const effectiveModels = storeManager.getEffectiveModels(provider.id)
     const effectiveModel = effectiveModels.find(m => 
-      m.displayName.toLowerCase() === model.toLowerCase()
+      m.displayName.toLowerCase() === baseModel.toLowerCase()
     )
     
     if (effectiveModel) {
       console.log(`[LoadBalancer] Model mapped from "${model}" to "${effectiveModel.actualModelId}" via effective models`)
-      return effectiveModel.actualModelId
+      return appendModelSuffix(effectiveModel.actualModelId, suffix)
     }
 
     const config = storeManager.getConfig()
-    const mapping = config.modelMappings[model]
+    const mapping = config.modelMappings[model] ?? config.modelMappings[baseModel]
 
     if (mapping && (!mapping.preferredProviderId || mapping.preferredProviderId === provider.id)) {
       const actualModel = mapping.actualModel
@@ -221,10 +225,10 @@ export class LoadBalancer {
       )
       if (actualEffectiveModel) {
         console.log(`[LoadBalancer] Model further mapped from "${actualModel}" to "${actualEffectiveModel.actualModelId}" via effective models`)
-        return actualEffectiveModel.actualModelId
+        return appendModelSuffix(actualEffectiveModel.actualModelId, suffix)
       }
       
-      return actualModel
+      return appendModelSuffix(actualModel, suffix)
     }
 
     console.log(`[LoadBalancer] No mapping found, returning original model "${model}"`)
@@ -283,7 +287,7 @@ export class LoadBalancer {
       return this.selectRoundRobin(healthyCandidates)
     }
 
-    const sortedCandidates = candidates.sort((a, b) => {
+    const sortedCandidates = [...candidates].sort((a, b) => {
       const failureA = this.failedAccounts.get(a.account.id)
       const failureB = this.failedAccounts.get(b.account.id)
 
@@ -336,6 +340,26 @@ export class LoadBalancer {
 
     return [...models]
   }
+}
+
+function splitQwenModeSuffix(provider: Provider, model: string): {
+  baseModel: string
+  suffix: '-thinking' | '-fast' | ''
+} {
+  if (provider.id !== 'qwen-ai' && !provider.apiEndpoint.includes('chat.qwen.ai')) {
+    return { baseModel: model, suffix: '' }
+  }
+
+  const match = /-(thinking|fast)$/i.exec(model)
+  if (!match) return { baseModel: model, suffix: '' }
+
+  const suffix = `-${match[1].toLowerCase()}` as '-thinking' | '-fast'
+  return { baseModel: model.slice(0, -match[0].length), suffix }
+}
+
+function appendModelSuffix(model: string, suffix: '-thinking' | '-fast' | ''): string {
+  if (!suffix || model.toLowerCase().endsWith(suffix)) return model
+  return `${model}${suffix}`
 }
 
 export const loadBalancer = new LoadBalancer()

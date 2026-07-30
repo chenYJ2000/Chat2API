@@ -109,3 +109,27 @@ test('RequestLogManager buffers writes until flush', async (t) => {
   assert.match(persisted, /"timestamp":1/)
   assert.match(persisted, /"timestamp":2/)
 })
+
+test('RequestLogManager stream completion update does not erase the original input', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'request-log-manager-update-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+
+  const manager = new RequestLogManager({
+    storageDir: root,
+    config: createConfig({ includeBodies: true, maxBodyChars: 1000 }),
+  })
+
+  await manager.initialize()
+  const entry = manager.addRequestLog(createEntryInput(1))
+  manager.updateRequestLog(entry.id, {
+    responseBody: '{"done":true}',
+    latency: 999,
+  })
+  manager.flushSync()
+
+  const updated = manager.getRequestLogById(entry.id)
+  assert.equal(updated?.userInput, 'hello-temp')
+  assert.equal(updated?.requestBody, JSON.stringify({ token: '[REDACTED]' }))
+  assert.equal(updated?.responseBody, '{"done":true}')
+  assert.equal(updated?.latency, 999)
+})

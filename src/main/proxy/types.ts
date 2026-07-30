@@ -72,6 +72,8 @@ export interface ChatCompletionRequest {
   stream?: boolean
   stop?: string | string[]
   max_tokens?: number
+  /** Maximum total generated tokens (reasoning + answer) */
+  max_completion_tokens?: number
   presence_penalty?: number
   frequency_penalty?: number
   logit_bias?: Record<string, number>
@@ -91,9 +93,13 @@ export interface ChatCompletionRequest {
     }
   }
   /** Reasoning effort level (OpenAI compatible) - enables thinking mode */
-  reasoning_effort?: 'low' | 'medium' | 'high'
+  reasoning_effort?: string | boolean
   /** Reasoning effort level (camelCase, for AI SDK compatibility) */
-  reasoningEffort?: 'low' | 'medium' | 'high'
+  reasoningEffort?: string | boolean
+  /** Explicit thinking switch (supported by providers such as Qwen AI) */
+  enable_thinking?: boolean
+  /** Maximum reasoning tokens (supported by providers such as Qwen AI) */
+  thinking_budget?: number
   /** Enable deep research mode (GLM specific) */
   deep_research?: boolean
   /** Tools for function calling */
@@ -240,6 +246,8 @@ export interface ForwardResult {
   latency?: number
   providerSessionId?: string
   parentMessageId?: string
+  /** Account/provider that produced the final attempt after retry failover. */
+  selection?: AccountSelection
 }
 
 /**

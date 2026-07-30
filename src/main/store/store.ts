@@ -411,15 +411,15 @@ class StoreManager {
    */
   encryptData(data: string): string {
     try {
-      console.log('[Store] encryptData input length:', data.length, 'content:', data.substring(0, 20) + '...')
+      console.log('[Store] Encrypting credential, input length:', data.length)
       if (safeStorage.isEncryptionAvailable()) {
         // Create new Buffer to store encryption result
         const encrypted = Buffer.from(safeStorage.encryptString(data))
         const result = encrypted.toString('base64')
-        console.log('[Store] encryptData output length:', result.length, 'content:', result.substring(0, 20) + '...')
+        console.log('[Store] Credential encrypted, output length:', result.length)
         // Verify encryption is correct
         const decrypted = safeStorage.decryptString(encrypted)
-        console.log('[Store] encryptData verify decryption:', decrypted.substring(0, 20) + '...', 'match:', decrypted === data)
+        console.log('[Store] Credential encryption verified:', decrypted === data)
         return result
       } else {
         console.log('[Store] Encryption unavailable, returning original data')
@@ -664,9 +664,8 @@ class StoreManager {
     
     console.log('[Store] Update account:', {
       id,
-      updatesCredentials: updates.credentials,
-      oldCredentials: accounts[index].credentials,
-      oldCredentialsDecrypted: this.decryptCredentials(accounts[index].credentials),
+      fields: Object.keys(updates),
+      credentialsUpdated: Boolean(updates.credentials),
     })
     
     const updatedAccount: Account = {
@@ -677,9 +676,7 @@ class StoreManager {
     
     if (updates.credentials) {
       updatedAccount.credentials = this.encryptCredentials(updates.credentials)
-      console.log('[Store] Encrypted credentials:', updatedAccount.credentials)
-      console.log('[Store] Old credentials:', accounts[index].credentials)
-      console.log('[Store] Credentials match:', JSON.stringify(updatedAccount.credentials) === JSON.stringify(accounts[index].credentials))
+      console.log('[Store] Updated encrypted credentials for account:', id)
     }
     
     accounts[index] = updatedAccount
@@ -690,7 +687,7 @@ class StoreManager {
     const savedAccount = savedAccounts.find(a => a.id === id)
     console.log('[Store] Verify after save:', {
       id,
-      savedCredentials: savedAccount?.credentials,
+      saved: Boolean(savedAccount),
     })
     
     return {

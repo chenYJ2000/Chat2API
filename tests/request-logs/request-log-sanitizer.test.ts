@@ -80,6 +80,30 @@ test('sanitizeRequestLogUpdates applies the same persistence rules to updates', 
   assert.ok(sanitized.responseBody?.includes('[truncated'))
 })
 
+test('sanitizeRequestLogUpdates preserves fields omitted from a partial update', () => {
+  const sanitized = sanitizeRequestLogUpdates(
+    { responseBody: '{"ok":true}', latency: 456 },
+    createConfig(),
+  )
+
+  assert.equal(Object.hasOwn(sanitized, 'userInput'), false)
+  assert.equal(Object.hasOwn(sanitized, 'requestBody'), false)
+  assert.equal(Object.hasOwn(sanitized, 'errorMessage'), false)
+  assert.equal(sanitized.latency, 456)
+})
+
+test('sanitizeRequestLogUpdates only drops a disabled body when that body was updated', () => {
+  const sanitized = sanitizeRequestLogUpdates(
+    { responseBody: '{"ok":true}' },
+    createConfig({ includeBodies: false }),
+  )
+
+  assert.equal(Object.hasOwn(sanitized, 'requestBody'), false)
+  assert.equal(Object.hasOwn(sanitized, 'userInput'), false)
+  assert.equal(Object.hasOwn(sanitized, 'responseBody'), true)
+  assert.equal(sanitized.responseBody, undefined)
+})
+
 test('trimRequestLogsToMaxEntries keeps the newest entries only', () => {
   const trimmed = trimRequestLogsToMaxEntries(
     [

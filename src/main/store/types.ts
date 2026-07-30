@@ -444,7 +444,7 @@ export interface RequestLogEntry {
   /** Web search enabled */
   webSearch?: boolean
   /** Reasoning effort level */
-  reasoningEffort?: 'low' | 'medium' | 'high'
+  reasoningEffort?: string | boolean
 
   /** Response status code */
   responseStatus: number

@@ -148,6 +148,10 @@ router.post('/completions', async (ctx: Context) => {
     )
 
     const latency = Date.now() - startTime
+    const resolvedSelection = result.selection ?? selection
+    const usedAccount = resolvedSelection.account
+    const usedProvider = resolvedSelection.provider
+    const usedActualModel = resolvedSelection.actualModel
 
     if (!result.success) {
       proxyStatusManager.recordRequestFailure(latency)
@@ -162,23 +166,25 @@ router.post('/completions', async (ctx: Context) => {
       return
     }
 
-    proxyStatusManager.recordRequestSuccess(latency)
-
-    storeManager.updateAccount(account.id, {
-      lastUsed: Date.now(),
-      requestCount: (account.requestCount || 0) + 1,
-      todayUsed: (account.todayUsed || 0) + 1,
-    })
-
-    storeManager.addLog('debug', `Request succeeded`, {
-      requestId,
-      providerId: provider.id,
-      accountId: account.id,
-      model: request.model,
-      actualModel,
-      latency,
-      isStream: request.stream,
-    })
+    const recordSuccess = (finalLatency: number) => {
+      loadBalancer.clearAccountFailure(usedAccount.id)
+      proxyStatusManager.recordRequestSuccess(finalLatency)
+      const latestAccount = storeManager.getAccountById(usedAccount.id) ?? usedAccount
+      storeManager.updateAccount(usedAccount.id, {
+        lastUsed: Date.now(),
+        requestCount: (latestAccount.requestCount || 0) + 1,
+        todayUsed: (latestAccount.todayUsed || 0) + 1,
+      })
+      storeManager.addLog('debug', 'Request succeeded', {
+        requestId,
+        providerId: usedProvider.id,
+        accountId: usedAccount.id,
+        model: request.model,
+        actualModel: usedActualModel,
+        latency: finalLatency,
+        isStream: request.stream,
+      })
+    }
 
     if (request.stream && result.stream) {
       ctx.set('Content-Type', 'text/event-stream')
@@ -186,10 +192,35 @@ router.post('/completions', async (ctx: Context) => {
       ctx.set('Connection', 'keep-alive')
       ctx.set('X-Accel-Buffering', 'no')
 
-      const transformStream = streamHandler.createTransformStream(actualModel, requestId)
+      let streamSettled = false
+      const finishSuccess = () => {
+        if (streamSettled) return
+        streamSettled = true
+        recordSuccess(Date.now() - startTime)
+      }
+      const finishFailure = (error: Error) => {
+        if (streamSettled) return
+        streamSettled = true
+        const finalLatency = Date.now() - startTime
+        loadBalancer.markAccountFailed(usedAccount.id)
+        proxyStatusManager.recordRequestFailure(finalLatency)
+        storeManager.addLog('error', `Completion stream error: ${error.message}`, {
+          requestId,
+          providerId: usedProvider.id,
+          accountId: usedAccount.id,
+          model: request.model,
+          latency: finalLatency,
+        })
+      }
+
+      const transformStream = streamHandler.createTransformStream(usedActualModel, requestId)
+      result.stream.once('error', finishFailure)
+      transformStream.once('error', finishFailure)
+      transformStream.once('end', finishSuccess)
       result.stream.pipe(transformStream)
       ctx.body = transformStream
     } else {
+      recordSuccess(latency)
       ctx.set('Content-Type', 'application/json')
       ctx.body = result.body
     }

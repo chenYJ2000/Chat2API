@@ -1,3 +1,5 @@
+import { isReasoningEnabled } from '../utils/reasoning'
+
 export interface DeepSeekChatOptionInput {
   model: string
   web_search?: boolean
@@ -24,7 +26,7 @@ export function resolveDeepSeekChatOptions(
   return {
     modelType: isProModel ? 'expert' : 'default',
     searchEnabled: Boolean(request.web_search) || isSearchAlias,
-    thinkingEnabled: Boolean(request.reasoning_effort)
+    thinkingEnabled: isReasoningEnabled(request.reasoning_effort)
       || isThinkingAlias,
   }
 }

@@ -188,13 +188,13 @@ router.post('/completions', async (ctx: Context) => {
     )
 
     const latency = Date.now() - startTime
+    const resolvedSelection = result.selection ?? selection
+    const usedAccount = resolvedSelection.account
+    const usedProvider = resolvedSelection.provider
+    const usedActualModel = resolvedSelection.actualModel
 
     if (!result.success) {
       proxyStatusManager.recordRequestFailure(latency)
-
-      if (result.status && result.status >= 400 && result.status !== 429) {
-        loadBalancer.markAccountFailed(account.id)
-      }
 
       ctx.status = result.status || 500
       ctx.body = {
@@ -208,8 +208,8 @@ router.post('/completions', async (ctx: Context) => {
 
       storeManager.addLog('error', `Request failed: ${result.error}`, {
         requestId,
-        providerId: provider.id,
-        accountId: account.id,
+        providerId: usedProvider.id,
+        accountId: usedAccount.id,
         model: request.model,
         latency,
       })
@@ -230,11 +230,11 @@ router.post('/completions', async (ctx: Context) => {
         method: 'POST',
         url: '/v1/chat/completions',
         model: request.model,
-        actualModel,
-        providerId: provider.id,
-        providerName: provider.name,
-        accountId: account.id,
-        accountName: account.name,
+        actualModel: usedActualModel,
+        providerId: usedProvider.id,
+        providerName: usedProvider.name,
+        accountId: usedAccount.id,
+        accountName: usedAccount.name,
         requestBody: JSON.stringify(request),
         userInput,
         webSearch: request.web_search,
@@ -246,66 +246,37 @@ router.post('/completions', async (ctx: Context) => {
         errorMessage: result.error,
       })
 
-      storeManager.recordRequestInStats(false, latency, request.model, provider.id, account.id)
+      storeManager.recordRequestInStats(
+        false,
+        latency,
+        request.model,
+        usedProvider.id,
+        usedAccount.id,
+      )
 
       return
     }
 
-    loadBalancer.clearAccountFailure(account.id)
-
-    proxyStatusManager.recordRequestSuccess(latency)
-
-    storeManager.updateAccount(account.id, {
-      lastUsed: Date.now(),
-      requestCount: (account.requestCount || 0) + 1,
-      todayUsed: (account.todayUsed || 0) + 1,
-    })
-
-    storeManager.addLog('debug', `Request succeeded`, {
-      requestId,
-      providerId: provider.id,
-      accountId: account.id,
-      model: request.model,
-      actualModel,
-      latency,
-      isStream: request.stream,
-    })
-
     const userInput = extractUserInput(request.messages)
-    // Prepare response body for logging (only for non-stream requests)
-    const responseBodyForLog = !request.stream && result.body
-      ? JSON.stringify(result.body)
-      : undefined
-
-    // For streaming requests, we'll collect content and update the log later
-    let logEntryId: string | undefined
-
-    if (!request.stream) {
-      // Non-streaming: record log with response body now
-      const logEntry = storeManager.addRequestLog({
-        timestamp: startTime,
-        status: 'success',
-        statusCode: 200,
-        method: 'POST',
-        url: '/v1/chat/completions',
-        model: request.model,
-        actualModel,
-        providerId: provider.id,
-        providerName: provider.name,
-        accountId: account.id,
-        accountName: account.name,
-        requestBody: JSON.stringify(request),
-        userInput,
-        webSearch: request.web_search,
-        reasoningEffort: request.reasoning_effort,
-        responseStatus: 200,
-        responseBody: responseBodyForLog,
-        latency,
-        isStream: false,
+    const recordSuccessfulAccountUse = () => {
+      const latestAccount = storeManager.getAccountById(usedAccount.id) ?? usedAccount
+      storeManager.updateAccount(usedAccount.id, {
+        lastUsed: Date.now(),
+        requestCount: (latestAccount.requestCount || 0) + 1,
+        todayUsed: (latestAccount.todayUsed || 0) + 1,
       })
-      logEntryId = logEntry.id
-    } else {
-      // Streaming: record log now, will update response body later
+    }
+
+    if (request.stream === true && result.stream) {
+      ctx.set('Content-Type', 'text/event-stream')
+      ctx.set('Cache-Control', 'no-cache')
+      ctx.set('Connection', 'keep-alive')
+      ctx.set('X-Accel-Buffering', 'no')
+
+      const wrapperStream = new PassThrough()
+      let collectedContent = ''
+      let streamSettled = false
+
       const logEntry = storeManager.addRequestLog({
         timestamp: startTime,
         status: 'success',
@@ -313,11 +284,11 @@ router.post('/completions', async (ctx: Context) => {
         method: 'POST',
         url: '/v1/chat/completions',
         model: request.model,
-        actualModel,
-        providerId: provider.id,
-        providerName: provider.name,
-        accountId: account.id,
-        accountName: account.name,
+        actualModel: usedActualModel,
+        providerId: usedProvider.id,
+        providerName: usedProvider.name,
+        accountId: usedAccount.id,
+        accountName: usedAccount.name,
         requestBody: JSON.stringify(request),
         userInput,
         webSearch: request.web_search,
@@ -326,33 +297,62 @@ router.post('/completions', async (ctx: Context) => {
         latency,
         isStream: true,
       })
-      logEntryId = logEntry.id
-    }
 
-    storeManager.recordRequestInStats(true, latency, request.model, provider.id, account.id)
+      const finishStreamSuccess = () => {
+        if (streamSettled) return
+        streamSettled = true
+        const finalLatency = Date.now() - startTime
 
-    if (request.stream === true && result.stream) {
-      ctx.set('Content-Type', 'text/event-stream')
-      ctx.set('Cache-Control', 'no-cache')
-      ctx.set('Connection', 'keep-alive')
-      ctx.set('X-Accel-Buffering', 'no')
+        loadBalancer.clearAccountFailure(usedAccount.id)
+        proxyStatusManager.recordRequestSuccess(finalLatency)
+        recordSuccessfulAccountUse()
+        storeManager.recordRequestInStats(
+          true,
+          finalLatency,
+          request.model,
+          usedProvider.id,
+          usedAccount.id,
+        )
+        storeManager.updateRequestLog(logEntry.id, {
+          status: 'success',
+          statusCode: 200,
+          responseStatus: 200,
+          responseBody: collectedContent || undefined,
+          latency: finalLatency,
+          errorMessage: undefined,
+        })
+        storeManager.addLog('debug', 'Stream response completed', {
+          requestId,
+          providerId: usedProvider.id,
+          accountId: usedAccount.id,
+          model: request.model,
+          actualModel: usedActualModel,
+          latency: finalLatency,
+          isStream: true,
+        })
+      }
 
-      // Create a wrapper stream to handle errors and collect content
-      const wrapperStream = new PassThrough()
+      const finishStreamFailure = (err: Error, sendToClient: boolean = true) => {
+        if (streamSettled) return
+        streamSettled = true
+        const finalLatency = Date.now() - startTime
+        const statusCode = 502
 
-      // Collect stream content for logging (raw SSE output)
-      let collectedContent = ''
+        loadBalancer.markAccountFailed(usedAccount.id)
+        proxyStatusManager.recordRequestFailure(finalLatency)
+        storeManager.recordRequestInStats(
+          false,
+          finalLatency,
+          request.model,
+          usedProvider.id,
+          usedAccount.id,
+        )
 
-      // Handle stream errors
-      result.stream.once('error', (err: Error) => {
-        console.error('[Chat] Stream error:', err.message)
-
-        // Send error as SSE event
         const errorEvent = {
           id: requestId,
           object: 'chat.completion.chunk',
           created: Math.floor(Date.now() / 1000),
-          model: actualModel,
+          model: usedActualModel,
           choices: [{
             index: 0,
             delta: {
@@ -362,84 +362,90 @@ router.post('/completions', async (ctx: Context) => {
           }],
         }
 
-        wrapperStream.write(`data: ${JSON.stringify(errorEvent)}\n\n`)
-        wrapperStream.write('data: [DONE]\n\n')
-        wrapperStream.end()
+        const serializedError = `data: ${JSON.stringify(errorEvent)}\n\ndata: [DONE]\n\n`
+        collectedContent += serializedError
+        storeManager.updateRequestLog(logEntry.id, {
+          status: 'error',
+          statusCode,
+          responseStatus: statusCode,
+          responseBody: collectedContent,
+          latency: finalLatency,
+          errorMessage: err.message,
+        })
 
         storeManager.addLog('error', `Stream error: ${err.message}`, {
           requestId,
-          providerId: provider.id,
-          accountId: account.id,
+          providerId: usedProvider.id,
+          accountId: usedAccount.id,
           model: request.model,
+          latency: finalLatency,
         })
+
+        if (sendToClient && !wrapperStream.destroyed && !wrapperStream.writableEnded) {
+          wrapperStream.end(serializedError)
+        }
+      }
+
+      result.stream.once('error', (err: Error) => {
+        console.error('[Chat] Stream error:', err.message)
+        finishStreamFailure(err)
       })
 
-      // Check if stream is already in correct SSE format (from adapters like Kimi, GLM, DeepSeek)
       if (result.skipTransform) {
-        // Stream is already formatted, pipe through wrapper and collect
         result.stream.on('data', (chunk: Buffer) => {
           collectedContent += chunk.toString()
         })
 
         result.stream.pipe(wrapperStream, { end: false })
-
-        // When source stream ends normally, update log and end wrapper
         result.stream.once('end', () => {
-          // Update log with collected response
-          if (logEntryId) {
-            storeManager.updateRequestLog(logEntryId, {
-              responseBody: collectedContent || undefined,
-            })
-          }
+          finishStreamSuccess()
           wrapperStream.end()
         })
       } else {
-        // Need to transform the stream
         const transformStream = streamHandler.createTransformStream(
-          actualModel,
+          usedActualModel,
           requestId,
-          () => {
-            storeManager.addLog('debug', `Stream response completed`, { requestId })
-          }
         )
 
-        // Collect from transform stream output
         transformStream.on('data', (chunk: Buffer) => {
           collectedContent += chunk.toString()
         })
+        transformStream.once('error', (err: Error) => finishStreamFailure(err))
 
         result.stream.pipe(transformStream)
         transformStream.pipe(wrapperStream, { end: false })
 
         transformStream.once('end', () => {
-          // Update log with collected response
-          if (logEntryId) {
-            storeManager.updateRequestLog(logEntryId, {
-              responseBody: collectedContent || undefined,
-            })
-          }
+          finishStreamSuccess()
           wrapperStream.end()
         })
       }
+
+      wrapperStream.once('close', () => {
+        if (streamSettled) return
+        const upstreamStream = result.stream as (NodeJS.ReadableStream & { destroy?: () => void })
+        if (typeof upstreamStream.destroy === 'function') upstreamStream.destroy()
+        finishStreamFailure(new Error('Client disconnected before stream completion'), false)
+      })
 
       ctx.body = wrapperStream
     } else {
       ctx.set('Content-Type', 'application/json')
 
+      let responseBody: ChatCompletionResponse | unknown
       if (result.body) {
-        // Check if we need to transform to Anthropic format
         if (isAnthropicToolFormat(request.tool_format)) {
-          ctx.body = transformResponseToAnthropic(result.body)
+          responseBody = transformResponseToAnthropic(result.body)
           console.log('[Chat] Transformed response to Anthropic tool format')
         } else {
-          ctx.body = result.body
+          responseBody = result.body
         }
       } else {
-        ctx.body = {
+        responseBody = {
           id: requestId,
           object: 'chat.completion',
           created: Math.floor(Date.now() / 1000),
-          model: actualModel,
+          model: usedActualModel,
           choices: [{
             index: 0,
             message: {
@@ -455,6 +461,48 @@ router.post('/completions', async (ctx: Context) => {
           },
         }
       }
+
+      loadBalancer.clearAccountFailure(usedAccount.id)
+      proxyStatusManager.recordRequestSuccess(latency)
+      recordSuccessfulAccountUse()
+      storeManager.recordRequestInStats(
+        true,
+        latency,
+        request.model,
+        usedProvider.id,
+        usedAccount.id,
+      )
+      storeManager.addRequestLog({
+        timestamp: startTime,
+        status: 'success',
+        statusCode: 200,
+        method: 'POST',
+        url: '/v1/chat/completions',
+        model: request.model,
+        actualModel: usedActualModel,
+        providerId: usedProvider.id,
+        providerName: usedProvider.name,
+        accountId: usedAccount.id,
+        accountName: usedAccount.name,
+        requestBody: JSON.stringify(request),
+        userInput,
+        webSearch: request.web_search,
+        reasoningEffort: request.reasoning_effort,
+        responseStatus: 200,
+        responseBody: JSON.stringify(responseBody),
+        latency,
+        isStream: false,
+      })
+      storeManager.addLog('debug', 'Request succeeded', {
+        requestId,
+        providerId: usedProvider.id,
+        accountId: usedAccount.id,
+        model: request.model,
+        actualModel: usedActualModel,
+        latency,
+        isStream: false,
+      })
+      ctx.body = responseBody
     }
   } catch (error) {
     const latency = Date.now() - startTime

@@ -551,7 +551,7 @@ test('forwarder delegates managed tool transformation to ToolCallingEngine', () 
     'utf8',
   )
 
-  assert.match(source, /import \{ ToolCallingEngine \} from '\.\/toolCalling\/ToolCallingEngine'/)
+  assert.match(source, /ToolCallingEngine,[\s\S]*from '\.\/toolCalling\/ToolCallingEngine'/)
   assert.match(source, /engine\.transformRequest\(/)
   assert.match(source, /engine\.applyNonStreamResponse\(result, transformed\.plan\)/)
   assert.doesNotMatch(source, /promptInjectionService\.process\(/)

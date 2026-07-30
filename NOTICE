@@ -1,0 +1,19 @@
+Chat2API - Fork Notice
+======================
+
+This repository is a modified version of Chat2API.
+
+Original project: https://github.com/xiaoY233/Chat2API
+Original author and maintainer: xiaoY233
+Original contributors: the Chat2API contributors
+Original copyright notice: Copyright (C) 2026 Chat2API Team
+
+We sincerely thank xiaoY233 and every upstream contributor for creating and
+open-sourcing Chat2API. This fork would not exist without their work.
+
+The original Git history and the GNU General Public License v3.0 are retained.
+This fork is distributed under the same GPL-3.0 license. Fork-specific changes
+are documented in FORK_CHANGES.md and in the Git history.
+
+Chat2API and the supported AI providers are independent projects. This fork is
+not endorsed by, sponsored by, or affiliated with the upstream AI providers.

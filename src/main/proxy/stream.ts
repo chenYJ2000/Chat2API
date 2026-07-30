@@ -126,11 +126,9 @@ export class SSEFormatter {
  * Stream Response Handler
  */
 export class StreamHandler {
-  private parser: SSEParser
   private formatter: SSEFormatter
 
   constructor() {
-    this.parser = new SSEParser()
     this.formatter = new SSEFormatter()
   }
 
@@ -145,7 +143,10 @@ export class StreamHandler {
   ): Transform {
     let isFirstChunk = true
     const created = Math.floor(Date.now() / 1000)
-    const parser = this.parser
+    // Parser state contains a partial-line buffer, so it must be scoped to one
+    // response. Sharing it across concurrent streams can splice one model's
+    // SSE fragment into another response.
+    const parser = new SSEParser()
     const formatter = this.formatter
     const transformChunk = this.transformChunk.bind(this)
 
@@ -425,6 +426,7 @@ export class StreamHandler {
     responseId: string
   ): Promise<ChatCompletionResponse> {
     return new Promise((resolve, reject) => {
+      const parser = new SSEParser()
       let content = ''
       let reasoningContent = ''
       let finishReason: ChatCompletionChoice['finish_reason'] = null
@@ -432,7 +434,7 @@ export class StreamHandler {
       const created = Math.floor(Date.now() / 1000)
 
       stream.on('data', (chunk: Buffer) => {
-        const events = this.parser.parse(chunk.toString())
+        const events = parser.parse(chunk.toString())
 
         for (const event of events) {
           if (event.data === '[DONE]') continue

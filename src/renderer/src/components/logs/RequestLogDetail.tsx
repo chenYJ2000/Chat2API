@@ -27,7 +27,7 @@ interface RequestLogEntry {
   requestBody?: string
   userInput?: string
   webSearch?: boolean
-  reasoningEffort?: 'low' | 'medium' | 'high'
+  reasoningEffort?: string | boolean
   responseStatus: number
   responsePreview?: string
   responseBody?: string
@@ -150,6 +150,9 @@ export function RequestLogDetail({ log, onClose }: RequestLogDetailProps) {
       <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
         <FileJson className="h-12 w-12 mb-3 opacity-30" />
         <p className="text-sm">{t('logs.noRequestData')}</p>
+        <p className="mt-2 max-w-md text-center text-xs leading-relaxed">
+          {t('logs.noBodyDataHelp')}
+        </p>
       </div>
     )
 
@@ -279,7 +282,7 @@ export function RequestLogDetail({ log, onClose }: RequestLogDetailProps) {
                 />
                 <InfoItem 
                   label={t('logs.reasoningEffort')} 
-                  value={log.reasoningEffort || '-'}
+                  value={log.reasoningEffort === undefined ? '-' : String(log.reasoningEffort)}
                   icon={<Brain className="h-3 w-3" />}
                 />
               </div>
