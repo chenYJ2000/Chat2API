@@ -8,7 +8,7 @@ import crypto from 'crypto'
 import { Account, Provider } from '../../store/types'
 import { storeManager } from '../../store/store'
 import { PassThrough } from 'stream'
-import { isReasoningEnabled } from '../utils/reasoning'
+import { resolveGLMChatMode, type GLMChatMode } from './providerModelOptions'
 import { createParser } from 'eventsource-parser'
 import FormData from 'form-data'
 import mime from 'mime-types'
@@ -73,7 +73,7 @@ interface ChatCompletionRequest {
   stream?: boolean
   temperature?: number
   web_search?: boolean
-  reasoning_effort?: 'low' | 'medium' | 'high'
+  reasoningEffort?: string | boolean
   deep_research?: boolean
   tools?: any[]
   tool_choice?: any
@@ -490,36 +490,37 @@ GLM STRICT RULES:
     const preparedMessages = this.messagesToPrompt(messages, refs, toolsPrompt, false)
 
     let assistantId = DEFAULT_ASSISTANT_ID
-    let chatMode = ''
+    let reasoningEffort = request.reasoningEffort
     let isNetworking = false
 
-    // Use request parameters for mode control (OpenAI compatible)
-    if (isReasoningEnabled(request.reasoning_effort)) {
-      chatMode = 'zero'
-      console.log('[GLM] Using reasoning mode, effort:', request.reasoning_effort)
-    }
-    
     if (request.web_search) {
       isNetworking = true
       console.log('[GLM] Web search enabled')
     }
-    
-    if (request.deep_research) {
-      chatMode = 'deep_research'
-      console.log('[GLM] Using deep research mode')
-    }
 
-    // Fallback: check model name for backward compatibility
-    // Use originalModel for feature detection (preserves user's intent before mapping)
+    // Fall back to model-name aliases when the caller did not specify effort.
     const modelForDetection = request.originalModel || request.model
     const modelLower = modelForDetection.toLowerCase()
-    if (!chatMode && (modelLower.includes('think') || modelLower.includes('zero'))) {
-      chatMode = 'zero'
-      console.log('[GLM] Using reasoning mode (from model name)')
+    if (reasoningEffort === undefined) {
+      if (
+        modelLower.includes('deepthink')
+        || modelLower.includes('deep-thinking')
+        || modelLower.includes('deep_thinking')
+      ) {
+        reasoningEffort = 'max'
+      } else if (modelLower.includes('think') || modelLower.includes('zero')) {
+        reasoningEffort = 'high'
+      } else if (modelLower.includes('fast')) {
+        reasoningEffort = 'none'
+      }
     }
-    if (!chatMode && modelLower.includes('deepresearch')) {
+
+    let chatMode: GLMChatMode | 'deep_research' = resolveGLMChatMode(reasoningEffort)
+    if (request.deep_research || modelLower.includes('deepresearch')) {
       chatMode = 'deep_research'
-      console.log('[GLM] Using deep research mode (from model name)')
+      console.log('[GLM] Using deep research mode')
+    } else {
+      console.log('[GLM] Using GLM-5.2 thinking mode:', chatMode || 'fast')
     }
     
     // Check if model is an assistant ID (24+ alphanumeric characters)
@@ -539,9 +540,8 @@ GLM STRICT RULES:
         messages: preparedMessages,
         meta_data: {
           channel: '',
-          chat_mode: chatMode || undefined,
+          chat_mode: chatMode,
           draft_id: '',
-          if_plus_model: true,
           input_question_type: 'xxxx',
           is_networking: isNetworking,
           is_test: false,

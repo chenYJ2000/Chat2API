@@ -25,6 +25,8 @@ import {
   createKimiChatPayload,
   encodeKimiGrpcFrame,
   resolveDeepSeekChatOptions,
+  resolveGLMChatMode,
+  resolveKimiReasoningEffort,
   resolveKimiScenario,
 } from '../../src/main/proxy/adapters/providerModelOptions.ts'
 
@@ -178,12 +180,13 @@ test('DeepSeek provider config uses Web 2.0 browser headers', () => {
 })
 
 test('GLM, Kimi, and MiniMax built-in default models match current web providers', () => {
-  assert.deepEqual(glmConfig.supportedModels, ['GLM-5.1'])
-  assert.equal(glmConfig.modelMappings?.['GLM-5.1'], 'glm-5.1')
+  assert.deepEqual(glmConfig.supportedModels, ['GLM-5.2'])
+  assert.equal(glmConfig.modelMappings?.['GLM-5.2'], 'glm-5.2')
+  assert.equal(glmConfig.modelMappings?.['GLM-5.1'], undefined)
 
-  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K2.6'])
-  assert.equal(kimiConfig.modelMappings?.['Kimi-K2.6'], 'kimi-k2.6')
-  assert.equal(kimiConfig.modelMappings?.['Kimi-K2.5'], undefined)
+  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K3'])
+  assert.equal(kimiConfig.modelMappings?.['Kimi-K3'], 'k3')
+  assert.equal(kimiConfig.modelMappings?.['Kimi-K2.6'], undefined)
 
   assert.deepEqual(minimaxConfig.supportedModels, ['MiniMax-M2.7'])
   assert.deepEqual(minimaxConfig.modelMappings, {
@@ -199,28 +202,71 @@ test('GLM, Kimi, and MiniMax built-in default models match current web providers
   assert.doesNotMatch(minimaxAdapterSource, /MiniMax-M2\.5/)
 })
 
-test('Kimi K2.6 model mapping reaches the web chat request payload', () => {
-  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K2.6'])
-  assert.equal(kimiConfig.modelMappings?.['Kimi-K2.6'], 'kimi-k2.6')
-  assert.equal(resolveKimiScenario('kimi-k2.6'), 'SCENARIO_K2D6')
-  assert.equal(resolveKimiScenario('kimi-k2.5'), 'SCENARIO_K2D5')
+test('GLM-5.2 reasoning effort maps to the current Qingyan web modes', () => {
+  assert.equal(resolveGLMChatMode(), 'thinking')
+  assert.equal(resolveGLMChatMode(false), '')
+  assert.equal(resolveGLMChatMode('none'), '')
+  assert.equal(resolveGLMChatMode('minimal'), '')
+  assert.equal(resolveGLMChatMode('fast'), '')
+  assert.equal(resolveGLMChatMode(true), 'thinking')
+  assert.equal(resolveGLMChatMode('low'), 'thinking')
+  assert.equal(resolveGLMChatMode('medium'), 'thinking')
+  assert.equal(resolveGLMChatMode('high'), 'thinking')
+  assert.equal(resolveGLMChatMode('standard'), 'thinking')
+  assert.equal(resolveGLMChatMode('xhigh'), 'deep_thinking')
+  assert.equal(resolveGLMChatMode('max'), 'deep_thinking')
+  assert.equal(resolveGLMChatMode('deep'), 'deep_thinking')
+  assert.throws(
+    () => resolveGLMChatMode('turbo'),
+    /Unsupported GLM reasoning_effort/,
+  )
+
+  const glmAdapterSource = readFileSync(
+    join(root, 'src/main/proxy/adapters/glm.ts'),
+    'utf8',
+  )
+  assert.match(glmAdapterSource, /chat_mode: chatMode/)
+  assert.doesNotMatch(glmAdapterSource, /if_plus_model/)
+})
+
+test('Kimi K3 model and reasoning effort reach the current web chat payload', () => {
+  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K3'])
+  assert.equal(kimiConfig.modelMappings?.['Kimi-K3'], 'k3')
+  assert.equal(resolveKimiScenario('k3'), 'SCENARIO_OK_COMPUTER')
+  assert.equal(resolveKimiScenario('kimi-k2.6'), 'SCENARIO_K2D5')
+
+  assert.equal(resolveKimiReasoningEffort('k3', 'low'), 'REASONING_EFFORT_LOW')
+  assert.equal(resolveKimiReasoningEffort('k3', 'standard'), 'REASONING_EFFORT_LOW')
+  assert.equal(resolveKimiReasoningEffort('k3', false), 'REASONING_EFFORT_LOW')
+  assert.equal(resolveKimiReasoningEffort('k3', 'high'), 'REASONING_EFFORT_HIGH')
+  assert.equal(resolveKimiReasoningEffort('k3', 'advanced'), 'REASONING_EFFORT_HIGH')
+  assert.equal(resolveKimiReasoningEffort('k3', true), 'REASONING_EFFORT_HIGH')
+  assert.equal(resolveKimiReasoningEffort('k3'), 'REASONING_EFFORT_HIGH')
+  assert.equal(resolveKimiReasoningEffort('k3', 'max'), 'REASONING_EFFORT_MAX')
+  assert.throws(
+    () => resolveKimiReasoningEffort('k3', 'turbo'),
+    /Unsupported Kimi reasoning_effort/,
+  )
 
   const payload = createKimiChatPayload({
-    model: 'kimi-k2.6',
+    model: 'k3',
     content: 'hello',
     enableWebSearch: true,
-    enableThinking: true,
+    reasoningEffort: 'low',
   })
 
-  assert.equal(payload.scenario, 'SCENARIO_K2D6')
-  assert.equal(payload.message.scenario, 'SCENARIO_K2D6')
+  assert.equal(payload.scenario, 'SCENARIO_OK_COMPUTER')
+  assert.equal(payload.message.scenario, 'SCENARIO_OK_COMPUTER')
+  assert.equal(payload.kimiplus_id, 'ok-computer')
   assert.deepEqual(payload.tools, [{ type: 'TOOL_TYPE_SEARCH', search: {} }])
   assert.equal(payload.options.thinking, true)
+  assert.equal(payload.options.reasoning_effort, 'REASONING_EFFORT_LOW')
+  assert.equal(payload.options.context_length, 'CONTEXT_LENGTH_L')
 
   const frame = encodeKimiGrpcFrame(payload)
   assert.equal(frame.readUInt8(0), 0)
   assert.equal(frame.readUInt32BE(1), frame.length - 5)
-  assert.equal(JSON.parse(frame.subarray(5).toString('utf8')).scenario, 'SCENARIO_K2D6')
+  assert.deepEqual(JSON.parse(frame.subarray(5).toString('utf8')), payload)
 })
 
 test('Kimi and domestic Qwen support account-level chat cleanup', () => {
@@ -511,7 +557,7 @@ test('Add provider dialog uses IPC built-in providers instead of duplicated mode
   assert.match(source, /const providers = builtinProviders/)
   assert.doesNotMatch(source, /DEFAULT_BUILTIN_PROVIDERS/)
   assert.doesNotMatch(source, /supportedModels:\s*\[/)
-  assert.doesNotMatch(source, /DeepSeek-V3\.2|DeepSeek-R1|deepseek-reasoner|Kimi-K2\.5|MiniMax-M2\.5/)
+  assert.doesNotMatch(source, /DeepSeek-V3\.2|DeepSeek-R1|deepseek-reasoner|Kimi-K2\.6|MiniMax-M2\.5/)
 })
 
 test('built-in model reset restores source defaults instead of stale persisted provider models', () => {

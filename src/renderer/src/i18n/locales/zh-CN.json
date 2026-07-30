@@ -249,14 +249,14 @@
   },
   "glm": {
     "name": "GLM",
-    "description": "智谱清言 AI 助手，支持 GLM-5.1 旗舰模型、深度思考和联网搜索",
+    "description": "智谱清言 AI 助手，支持 GLM-5.2 旗舰模型、分级思考和联网搜索",
     "refreshToken": "刷新令牌",
     "refreshTokenPlaceholder": "请输入智谱清言刷新令牌",
     "refreshTokenHelp": "从智谱清言网页版获取 chatglm_refresh_token，可在浏览器开发者工具 Application -> Cookie 中找到"
   },
   "kimi": {
     "name": "Kimi",
-    "description": "Kimi AI 助手，支持长文本处理和联网搜索",
+    "description": "Kimi K3 AI 助手，支持标准/进阶思考强度和联网搜索",
     "accessToken": "访问令牌",
     "accessTokenPlaceholder": "请输入 Kimi 访问令牌或刷新令牌",
     "accessTokenHelp": "浏览器 Cookie 中的 kimi-auth 字段值（推荐），也可使用 JWT Token 或 refresh_token"

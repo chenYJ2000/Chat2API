@@ -1,6 +1,6 @@
 /**
- * Kimi K2.6 Adapter
- * Implements Kimi web API protocol with thinking mode and web search support
+ * Kimi K3 Adapter
+ * Implements Kimi web API protocol with reasoning-effort and web search support
  */
 
 import axios, { AxiosResponse } from 'axios'
@@ -49,10 +49,11 @@ interface KimiMessage {
 
 interface ChatCompletionRequest {
   model: string
+  originalModel?: string
   messages: KimiMessage[]
   stream?: boolean
   temperature?: number
-  enableThinking?: boolean
+  reasoningEffort?: string | boolean
   enableWebSearch?: boolean
   tools?: any[]
   tool_choice?: any
@@ -305,19 +306,27 @@ export class KimiAdapter {
 
     const content = this.messagesPrepare(messages, toolsPrompt, false)
 
-    // Determine if thinking and web search should be enabled
-    // Priority: explicit parameters > model name detection
+    // Determine reasoning effort and web search settings.
+    // Priority: explicit parameters > model name aliases > website defaults.
     // Use originalModel for feature detection (preserves user's intent before mapping)
     const modelForDetection = request.originalModel || request.model
     const modelLower = modelForDetection.toLowerCase()
-    
-    let enableThinking = request.enableThinking ?? false
+
+    let reasoningEffort = request.reasoningEffort
     let enableWebSearch = request.enableWebSearch ?? false
-    
-    // Auto-enable based on model name (if not explicitly set)
-    if (!enableThinking && (modelLower.includes('think') || modelLower.includes('r1'))) {
-      enableThinking = true
-      console.log('[Kimi] Thinking mode enabled (from model name)')
+
+    if (reasoningEffort === undefined) {
+      if (modelLower.includes('max') || modelLower.includes('extreme')) {
+        reasoningEffort = 'max'
+      } else if (modelLower.includes('standard') || modelLower.includes('fast')) {
+        reasoningEffort = 'low'
+      } else if (
+        modelLower.includes('advanced')
+        || modelLower.includes('think')
+        || modelLower.includes('r1')
+      ) {
+        reasoningEffort = 'high'
+      }
     }
     if (!enableWebSearch && modelLower.includes('search')) {
       enableWebSearch = true
@@ -328,10 +337,15 @@ export class KimiAdapter {
       model: request.model,
       content,
       enableWebSearch,
-      enableThinking,
+      reasoningEffort,
     })
     const frameBuffer = encodeKimiGrpcFrame(payload)
 
+    console.log(
+      '[Kimi] Request mode:',
+      payload.scenario,
+      payload.options.reasoning_effort,
+    )
     console.log('[Kimi] Request body length:', frameBuffer.length, 'JSON length:', frameBuffer.length - 5)
 
     const response = await axios.post(

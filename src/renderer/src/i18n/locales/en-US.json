@@ -249,14 +249,14 @@
   },
   "glm": {
     "name": "GLM",
-    "description": "Zhipu Qingyan AI Assistant, supports GLM-5.1 flagship model, deep thinking and web search",
+    "description": "Zhipu Qingyan AI Assistant, supports GLM-5.2 flagship model, graded reasoning and web search",
     "refreshToken": "Refresh Token",
     "refreshTokenPlaceholder": "Enter chatglm_refresh_token",
     "refreshTokenHelp": "Get chatglm_refresh_token from Zhipu Qingyan web version, found in browser DevTools Application -> Cookie"
   },
   "kimi": {
     "name": "Kimi",
-    "description": "Kimi AI assistant, supports long text processing and web search",
+    "description": "Kimi K3 AI assistant with Standard/Advanced reasoning and web search",
     "accessToken": "Access Token",
     "accessTokenPlaceholder": "Enter Kimi Access Token or Refresh Token",
     "accessTokenHelp": "The kimi-auth value from browser cookies (recommended), or JWT Token / refresh_token"

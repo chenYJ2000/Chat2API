@@ -31,12 +31,12 @@ export const glmConfig: BuiltinProviderConfig = {
     'X-Lang': 'zh',
   },
   enabled: true,
-  description: 'Zhipu Qingyan AI assistant, supports GLM-5.1 flagship model, deep thinking and video generation',
+  description: 'Zhipu Qingyan AI assistant, supports GLM-5.2 flagship model, graded reasoning and web search',
   supportedModels: [
-    'GLM-5.1',
+    'GLM-5.2',
   ],
   modelMappings: {
-    'GLM-5.1': 'glm-5.1',
+    'GLM-5.2': 'glm-5.2',
   },
   credentialFields: [
     {

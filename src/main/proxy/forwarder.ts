@@ -680,6 +680,9 @@ export class RequestForwarder {
       }
 
       const adapter = new GLMAdapter(provider, account)
+      const glmReasoningEffort = transformedRequest.reasoning_effort
+        ?? transformedRequest.reasoningEffort
+        ?? transformedRequest.enable_thinking
       const { response, conversationId } = await adapter.chatCompletion({
         model: actualModel,
         originalModel: request.model,
@@ -687,7 +690,7 @@ export class RequestForwarder {
         stream: transformedRequest.stream,
         temperature: transformedRequest.temperature,
         web_search: transformedRequest.web_search,
-        reasoning_effort: transformedRequest.reasoning_effort,
+        reasoningEffort: glmReasoningEffort,
         deep_research: transformedRequest.deep_research,
       })
 
@@ -767,6 +770,7 @@ export class RequestForwarder {
       const latency = Date.now() - startTime
       return {
         success: false,
+        status: getForwardErrorStatus(error),
         error: error instanceof Error ? error.message : 'Unknown error',
         latency,
       }
@@ -784,13 +788,16 @@ export class RequestForwarder {
       const transformed = this.transformRequestForPromptToolUse(request, provider)
       
       const adapter = new KimiAdapter(provider, account)
+      const kimiReasoningEffort = request.reasoning_effort
+        ?? request.reasoningEffort
+        ?? request.enable_thinking
       const { response, conversationId } = await adapter.chatCompletion({
         model: actualModel,
         originalModel: request.model,
         messages: transformed.messages,
         stream: request.stream,
         temperature: request.temperature,
-        enableThinking: isReasoningEnabled(request.reasoning_effort),
+        reasoningEffort: kimiReasoningEffort,
         enableWebSearch: !!request.web_search,
       })
 
@@ -809,7 +816,7 @@ export class RequestForwarder {
       const handler = new KimiStreamHandler(
         actualModel,
         conversationId,
-        isReasoningEnabled(request.reasoning_effort),
+        true,
         transformed.plan,
       )
       
@@ -864,6 +871,7 @@ export class RequestForwarder {
       const latency = Date.now() - startTime
       return {
         success: false,
+        status: getForwardErrorStatus(error),
         error: error instanceof Error ? error.message : 'Unknown error',
         latency,
       }
