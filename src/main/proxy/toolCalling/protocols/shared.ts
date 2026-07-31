@@ -26,7 +26,14 @@ export function detectMarkers(buffer: string, markers: string[]): ToolProtocolDe
 }
 
 export function stripFencedCodeBlocks(content: string): string {
-  return content.replace(/```[\s\S]*?```/g, '')
+  // Models commonly wrap the requested protocol in ```xml or ```json even
+  // when told not to. The fence is presentation metadata; deleting the whole
+  // block also deletes an otherwise valid tool call.
+  return content.replace(/(^|\r?\n)[ \t]*```[^\r\n]*(?:\r?\n|$)/g, '$1')
+}
+
+export function hasFencedCodeBlock(content: string): boolean {
+  return /(^|\r?\n)[ \t]*```/.test(content)
 }
 
 export function toolNames(tools: NormalizedToolDefinition[]): Set<string> {
@@ -39,6 +46,7 @@ export function createParseResult(input: {
   protocol: ToolProtocolId | 'unknown'
   rawMatches: string[]
   invalidToolNames?: string[]
+  malformedToolNames?: string[]
   malformedReason?: string
 }): ToolParseResult {
   return {
@@ -48,6 +56,7 @@ export function createParseResult(input: {
     rawMatches: input.rawMatches,
     malformedReason: input.malformedReason,
     invalidToolNames: input.invalidToolNames ?? [],
+    malformedToolNames: input.malformedToolNames ?? [],
   }
 }
 
@@ -92,6 +101,55 @@ export function parseJsonValue(value: string): unknown {
     return JSON.parse(trimmed)
   } catch {
     return decodeXml(trimmed)
+  }
+}
+
+export function extractBalancedJsonObject(value: string): string | undefined {
+  const content = unwrapCdata(value)
+  const start = content.indexOf('{')
+  if (start === -1) return undefined
+
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (let index = start; index < content.length; index += 1) {
+    const character = content[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (character === '\\' && inString) {
+      escaped = true
+      continue
+    }
+    if (character === '"') {
+      inString = !inString
+      continue
+    }
+    if (inString) continue
+
+    if (character === '{') depth += 1
+    if (character === '}') {
+      depth -= 1
+      if (depth === 0) return content.slice(start, index + 1)
+    }
+  }
+
+  return undefined
+}
+
+export function parseJsonObject(value: string): Record<string, unknown> | undefined {
+  const candidate = extractBalancedJsonObject(value)
+  if (!candidate) return undefined
+
+  try {
+    const parsed = JSON.parse(candidate)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : undefined
+  } catch {
+    return undefined
   }
 }
 

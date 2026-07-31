@@ -406,7 +406,7 @@ export class MimoAdapter {
 
       const { code } = response.data || {}
       if (response.status !== 200 || code !== 0) {
-        console.warn('[Mimo] Failed to generate conversation title:', response.status, response.data)
+        console.warn('[Mimo] Failed to generate conversation title, status:', response.status)
         return false
       }
       return true
@@ -496,7 +496,7 @@ export class MimoAdapter {
       }
     )
 
-    console.log('[Mimo] Get conversation list page', pageNum, 'response:', JSON.stringify(response.data, null, 2))
+    console.log('[Mimo] Get conversation list response status:', response.status, 'page:', pageNum)
 
     const { code, data } = response.data || {}
     if (response.status !== 200 || code !== 0) {
@@ -540,7 +540,7 @@ export class MimoAdapter {
       }
     )
 
-    console.log('[Mimo] Delete conversations response:', JSON.stringify(response.data, null, 2))
+    console.log('[Mimo] Delete conversations response status:', response.status)
 
     const { code } = response.data || {}
     return response.status === 200 && code === 0

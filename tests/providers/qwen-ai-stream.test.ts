@@ -81,6 +81,19 @@ test('Qwen AI stream returns content, finish reason, and real usage', async () =
   assert.match(output, /data: \[DONE\]/)
 })
 
+test('Qwen AI omits usage when upstream does not provide complete token counts', async () => {
+  const handler = new QwenAiStreamHandler('Qwen3.7-Max')
+  handler.setChatId('chat-no-usage')
+  const upstream = sse([
+    { 'response.created': { response_id: 'resp-no-usage' } },
+    { choices: [{ delta: { phase: 'answer', content: 'ok', status: 'finished' } }] },
+  ])
+
+  const response = await handler.handleNonStream(upstream)
+
+  assert.equal('usage' in response, false)
+})
+
 test('Qwen AI stream cleanup callback is installed before a one-chunk response finishes', async () => {
   const cleanedChats: string[] = []
   const handler = new QwenAiStreamHandler('qwen3.6-plus', (chatId) => {
@@ -119,6 +132,79 @@ test('Qwen AI accepts OpenAI-style deltas without a phase field', async () => {
   ]))
 
   assert.equal(response.choices[0].message.content, 'phase-less')
+  assert.equal(handler.getUpstreamCompletionState(), 'complete')
+})
+
+test('Qwen AI records an output-limited partial answer separately from completion', async () => {
+  const handler = new QwenAiStreamHandler('Qwen3.7-Max', undefined, {
+    maxCompletionTokens: 5,
+  })
+  const response = await handler.handleNonStream(sse([{
+    choices: [{ delta: { content: '<|CHAT', phase: 'answer', status: 'typing' } }],
+    usage: { input_tokens: 10, output_tokens: 6, total_tokens: 16 },
+  }]))
+
+  assert.equal(response.choices[0].finish_reason, 'length')
+  assert.equal(handler.getUpstreamCompletionState(), 'output_limit')
+})
+
+test('Qwen AI records transport-ended partial output as incomplete', async () => {
+  const handler = new QwenAiStreamHandler('Qwen3.7-Max')
+  const response = await handler.handleNonStream(sse([{
+    choices: [{ delta: { content: '<|CHAT', phase: 'answer', status: 'typing' } }],
+  }]))
+
+  assert.equal(response.choices[0].message.content, '<|CHAT')
+  assert.equal(handler.getUpstreamCompletionState(), 'incomplete')
+})
+
+test('Qwen AI discards a superseded partial answer when upstream restarts the response', async () => {
+  const handler = new QwenAiStreamHandler('Qwen3.7-Max')
+  const response = await handler.handleNonStream(sse([
+    { 'response.created': { response_id: 'response-first' } },
+    {
+      choices: [{
+        delta: {
+          content: '<|CHAT2API|tool_calls><|CHAT2API|invoke name="signal_wait"',
+          phase: 'answer',
+          status: 'typing',
+        },
+      }],
+    },
+    { 'response.created': { response_id: 'response-replacement' } },
+    {
+      choices: [{
+        delta: { content: 'replacement answer', phase: 'answer', status: 'typing' },
+      }],
+    },
+    {
+      choices: [{ delta: { content: '', phase: 'answer', status: 'finished' } }],
+    },
+  ]))
+
+  assert.equal(response.id, 'response-replacement')
+  assert.equal(response.choices[0].message.content, 'replacement answer')
+  assert.equal(handler.getUpstreamEventSummary().responseCreatedCount, 2)
+})
+
+test('Qwen AI reconstructs unidentified multiplexed candidates without mixing their chunks', async () => {
+  const handler = new QwenAiStreamHandler('Qwen3.7-Max')
+  const response = await handler.handleNonStream(sse([
+    { 'response.created': { response_id: 'response-a' } },
+    { 'response.created': { response_id: 'response-b' } },
+    { choices: [{ delta: { content: 'A1', phase: 'answer', status: 'typing' } }] },
+    { choices: [{ delta: { content: 'B1', phase: 'answer', status: 'typing' } }] },
+    { choices: [{ delta: { content: 'A2', phase: 'answer', status: 'typing' } }] },
+    { choices: [{ delta: { content: 'B2', phase: 'answer', status: 'typing' } }] },
+    { choices: [{ delta: { content: '', phase: 'answer', status: 'finished' } }] },
+  ]))
+
+  assert.equal(response.choices[0].message.content, 'A1B1A2B2')
+  assert.deepEqual(handler.getAlternativeAnswerContents(), ['A1A2', 'B1B2'])
+  assert.deepEqual(
+    handler.getUpstreamEventSummary().responseCreatedChoiceOffsets,
+    [0, 0],
+  )
 })
 
 test('Qwen AI preserves assistant tool calls and tool validation feedback', () => {

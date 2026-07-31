@@ -106,6 +106,8 @@ export interface ChatCompletionRequest {
   tools?: ChatCompletionTool[]
   /** Tool choice strategy */
   tool_choice?: ChatCompletionToolChoice
+  /** Disable parallel calls when a client/provider supports the OpenAI control. */
+  parallel_tool_calls?: boolean
   /** Tool format - determines response format for tool calls */
   tool_format?: 'native' | 'json' | 'auto'
 }
@@ -230,6 +232,12 @@ export interface ProxyContext {
   startTime: number
   isStream: boolean
   clientIP?: string
+  /** Shared cancellation signal for client disconnects and the total request deadline. */
+  signal?: AbortSignal
+  /** Absolute wall-clock deadline shared by initial, repair, and retry attempts. */
+  deadlineAt?: number
+  /** Configured total request timeout, used for structured timeout errors. */
+  timeoutMs?: number
 }
 
 /**
@@ -246,6 +254,35 @@ export interface ForwardResult {
   latency?: number
   providerSessionId?: string
   parentMessageId?: string
+  /** Internal prompt-emulated tool failure context; never includes credentials. */
+  toolCallingFailure?: {
+    code:
+      | 'missing_required_call'
+      | 'invalid_arguments'
+      | 'upstream_multiplexed_response'
+      | 'upstream_incomplete_response'
+    toolName?: string
+    repairable: boolean
+    diagnostics?: import('./toolCalling/types').ToolCallDiagnostics
+    validationErrors?: string[]
+    validationIssues?: import('./toolCalling/types').ToolArgumentValidationIssue[]
+    repairAttempted?: boolean
+    repairAttempts?: number
+    /** Rejected arguments are fed only to the bounded repair turn; never log or return them. */
+    rejectedArguments?: string
+    /** Never logged or returned as diagnostics; used to preserve reasoning across bounded repair. */
+    reasoningContent?: string
+  }
+  /** Structural-only telemetry for the single bounded tool-repair attempt. */
+  toolRepair?: {
+    attempted: true
+    attempts: 1
+    result: 'succeeded' | 'failed'
+    firstValidationErrors: string[]
+    finalValidationErrors: string[]
+    firstValidationIssues: import('./toolCalling/types').ToolArgumentValidationIssue[]
+    finalValidationIssues: import('./toolCalling/types').ToolArgumentValidationIssue[]
+  }
   /** Account/provider that produced the final attempt after retry failover. */
   selection?: AccountSelection
 }

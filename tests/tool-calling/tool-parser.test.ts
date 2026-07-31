@@ -45,13 +45,76 @@ test('managed xml parses canonical XML compatibility form', () => {
   assert.equal(JSON.parse(result.toolCalls[0].function.arguments).filePath, '/tmp/a')
 })
 
-test('managed xml ignores fenced tool examples', () => {
+test('managed xml accepts single-quoted names and harmless wrapper attributes', () => {
+  const result = managedXmlProtocol.parse(
+    "<tool_calls version='1'><invoke mode='final' name='default_api:read_file'><parameter required='true' name='filePath'>/tmp/a</parameter></invoke></tool_calls>",
+    { tools, protocol: 'managed_xml' },
+  )
+
+  assert.equal(result.toolCalls.length, 1)
+  assert.equal(result.toolCalls[0].function.arguments, '{"filePath":"/tmp/a"}')
+})
+
+test('managed xml preserves and parses a tool call wrapped in a fenced block', () => {
   const result = managedXmlProtocol.parse(
     '```xml\n<|CHAT2API|tool_calls><|CHAT2API|invoke name="default_api:read_file"><|CHAT2API|parameter name="filePath">fake</|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>\n```',
     { tools, protocol: 'managed_xml' },
   )
 
+  assert.equal(result.toolCalls.length, 1)
+  assert.equal(result.toolCalls[0].function.arguments, '{"filePath":"fake"}')
+})
+
+test('managed xml parses a direct JSON object inside invoke', () => {
+  const result = managedXmlProtocol.parse(
+    '<tool_calls><invoke name="default_api:read_file">{"filePath":"/tmp/direct"}</invoke></tool_calls>',
+    { tools, protocol: 'managed_xml' },
+  )
+
+  assert.equal(result.toolCalls.length, 1)
+  assert.equal(result.toolCalls[0].function.arguments, '{"filePath":"/tmp/direct"}')
+})
+
+test('managed xml unwraps an arguments parameter containing the complete JSON object', () => {
+  const result = managedXmlProtocol.parse(
+    '<|CHAT2API|tool_calls><|CHAT2API|invoke name="default_api:read_file"><|CHAT2API|parameter name="arguments"><![CDATA[{"filePath":"/tmp/wrapped"}]]></|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>',
+    { tools, protocol: 'managed_xml' },
+  )
+
+  assert.equal(result.toolCalls.length, 1)
+  assert.equal(result.toolCalls[0].function.arguments, '{"filePath":"/tmp/wrapped"}')
+})
+
+test('managed xml merges explicit parameters with residual direct JSON', () => {
+  const result = managedXmlProtocol.parse(
+    '<tool_calls><invoke name="default_api:read_file"><parameter name="filePath">/tmp/explicit</parameter>{"encoding":"utf8"}</invoke></tool_calls>',
+    {
+      tools: [{
+        ...tools[0],
+        parameters: {
+          type: 'object',
+          properties: { filePath: { type: 'string' }, encoding: { type: 'string' } },
+        },
+      }],
+      protocol: 'managed_xml',
+    },
+  )
+
+  assert.deepEqual(JSON.parse(result.toolCalls[0].function.arguments), {
+    encoding: 'utf8',
+    filePath: '/tmp/explicit',
+  })
+})
+
+test('managed xml marks an empty invoke malformed instead of manufacturing empty arguments', () => {
+  const result = managedXmlProtocol.parse(
+    '<tool_calls><invoke name="default_api:read_file"></invoke></tool_calls>',
+    { tools, protocol: 'managed_xml' },
+  )
+
   assert.equal(result.toolCalls.length, 0)
+  assert.deepEqual(result.malformedToolNames, ['default_api:read_file'])
+  assert.match(result.malformedReason || '', /no parseable JSON arguments/)
 })
 
 test('unknown tool name is rejected', () => {

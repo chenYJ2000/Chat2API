@@ -626,7 +626,6 @@ export class DeepSeekStreamHandler {
             message,
             finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
           }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: accumulatedTokenUsage },
           created: this.created,
         })
       })

@@ -6,18 +6,26 @@
 import Router from '@koa/router'
 import type { Context } from 'koa'
 import { PassThrough } from 'stream'
-import { ChatCompletionRequest, ChatCompletionResponse, ProxyContext } from '../types'
+import { ChatCompletionRequest, ChatCompletionResponse, ForwardResult, ProxyContext } from '../types'
 import { loadBalancer } from '../loadbalancer'
 import { requestForwarder } from '../forwarder'
 import { streamHandler } from '../stream'
 import { proxyStatusManager } from '../status'
 import { modelMapper } from '../modelMapper'
+import { getModelDeprecation } from '../modelDeprecations'
 import { storeManager } from '../../store/store'
-import { 
+import {
   isAnthropicToolFormat,
   transformResponseToAnthropic,
   transformChunkToAnthropic
 } from '../utils/toolFormatConverter'
+import {
+  ClientDisconnectedError,
+  createRequestDeadline,
+  createTimeoutErrorPayload,
+  RequestTimeoutError,
+  waitForAbort,
+} from '../requestLifecycle'
 
 const router = new Router({ prefix: '/v1/chat' })
 
@@ -62,6 +70,30 @@ function extractUserInput(messages: Array<{ role: string; content?: string | any
   return undefined
 }
 
+function getToolRepairLogFields(result?: ForwardResult) {
+  const telemetry = result?.toolRepair
+  const formatFieldTypes = (
+    issues: NonNullable<ForwardResult['toolRepair']>['firstValidationIssues'],
+  ) => issues.map((issue) => ({
+    json_pointer: issue.jsonPointer,
+    expected: issue.expected,
+    actual_type: issue.actualType,
+    keyword: issue.keyword,
+  }))
+
+  return {
+    repair_attempted: telemetry?.attempted ?? false,
+    repair_attempts: telemetry?.attempts ?? 0,
+    repair_result: telemetry?.result ?? 'not_attempted' as const,
+    ...(telemetry ? {
+      first_validation_error: telemetry.firstValidationErrors[0],
+      final_validation_error: telemetry.finalValidationErrors[0],
+      first_field_types: formatFieldTypes(telemetry.firstValidationIssues),
+      final_field_types: formatFieldTypes(telemetry.finalValidationIssues),
+    } : {}),
+  }
+}
+
 /**
  * Handle Chat Completions Request
  */
@@ -69,6 +101,7 @@ router.post('/completions', async (ctx: Context) => {
   const startTime = Date.now()
   const requestId = generateRequestId()
   const clientIP = getClientIP(ctx)
+  ctx.set('X-Request-Id', requestId)
 
   let request: ChatCompletionRequest
   try {
@@ -151,13 +184,23 @@ router.post('/completions', async (ctx: Context) => {
   )
 
   if (!selection) {
-    ctx.status = 503
+    const hasExplicitMapping = Object.keys(config.modelMappings || {})
+      .some((model) => model.toLowerCase() === request.model.toLowerCase())
+    const deprecation = hasExplicitMapping ? undefined : getModelDeprecation(request.model)
+    ctx.status = deprecation ? 410 : 503
     ctx.body = {
       error: {
-        message: `No available account for model: ${request.model}`,
-        type: 'service_unavailable_error',
+        message: deprecation?.message || `No available account for model: ${request.model}`,
+        type: deprecation ? 'invalid_request_error' : 'service_unavailable_error',
         param: null,
-        code: 'no_available_account',
+        code: deprecation ? 'model_deprecated' : 'no_available_account',
+        ...(deprecation ? {
+          details: {
+            deprecated_model: deprecation.model,
+            suggested_replacement: deprecation.replacement,
+            requires_explicit_mapping: true,
+          },
+        } : {}),
       },
     }
     return
@@ -176,15 +219,43 @@ router.post('/completions', async (ctx: Context) => {
     clientIP,
   }
 
+  const clientAbortController = new AbortController()
+  const abortForClientDisconnect = () => {
+    if (!clientAbortController.signal.aborted) {
+      clientAbortController.abort(new ClientDisconnectedError(requestId))
+    }
+  }
+  const onResponseClose = () => {
+    if (!ctx.res.writableEnded) abortForClientDisconnect()
+  }
+  ctx.req.once('aborted', abortForClientDisconnect)
+  ctx.res.once('close', onResponseClose)
+
+  const requestDeadline = createRequestDeadline({
+    requestId,
+    timeoutMs: config.requestTimeout,
+    parentSignal: clientAbortController.signal,
+    startedAt: startTime,
+  })
+  const requestContext: ProxyContext = {
+    ...context,
+    signal: requestDeadline.signal,
+    deadlineAt: requestDeadline.deadlineAt,
+    timeoutMs: config.requestTimeout,
+  }
+
   proxyStatusManager.recordRequestStart(request.model, provider.id, account.id)
 
   try {
-    const result = await requestForwarder.forwardChatCompletion(
-      request,
-      account,
-      provider,
-      actualModel,
-      context
+    const result = await waitForAbort(
+      requestForwarder.forwardChatCompletion(
+        request,
+        account,
+        provider,
+        actualModel,
+        requestContext,
+      ),
+      requestDeadline.signal,
     )
 
     const latency = Date.now() - startTime
@@ -196,15 +267,24 @@ router.post('/completions', async (ctx: Context) => {
     if (!result.success) {
       proxyStatusManager.recordRequestFailure(latency)
 
+      const toolDiagnostics = config.toolCallingConfig.diagnosticsEnabled
+        ? result.toolCallingFailure?.diagnostics
+        : undefined
+      const isTimeout = result.status === 504
+      const errorPayload = isTimeout
+        ? createTimeoutErrorPayload(result.error || 'Request timed out', requestId)
+        : {
+            error: {
+              message: result.error || 'Request failed',
+              type: 'api_error',
+              param: null,
+              code: result.toolCallingFailure?.code ?? null,
+              ...(toolDiagnostics ? { diagnostics: toolDiagnostics } : {}),
+            },
+          }
+
       ctx.status = result.status || 500
-      ctx.body = {
-        error: {
-          message: result.error || 'Request failed',
-          type: 'api_error',
-          param: null,
-          code: null,
-        },
-      }
+      ctx.body = errorPayload
 
       storeManager.addLog('error', `Request failed: ${result.error}`, {
         requestId,
@@ -212,17 +292,14 @@ router.post('/completions', async (ctx: Context) => {
         accountId: usedAccount.id,
         model: request.model,
         latency,
+        data: {
+          ...getToolRepairLogFields(result),
+          ...(toolDiagnostics ? { toolCalling: toolDiagnostics } : {}),
+        },
       })
 
       const userInput = extractUserInput(request.messages)
-      const errorResponseBody = JSON.stringify({
-        error: {
-          message: result.error || 'Request failed',
-          type: 'api_error',
-          param: null,
-          code: null,
-        },
-      })
+      const errorResponseBody = JSON.stringify(errorPayload)
       storeManager.addRequestLog({
         timestamp: startTime,
         status: 'error',
@@ -239,6 +316,7 @@ router.post('/completions', async (ctx: Context) => {
         userInput,
         webSearch: request.web_search,
         reasoningEffort: request.reasoning_effort,
+        ...getToolRepairLogFields(result),
         responseStatus: result.status || 500,
         responseBody: errorResponseBody,
         latency,
@@ -293,6 +371,7 @@ router.post('/completions', async (ctx: Context) => {
         userInput,
         webSearch: request.web_search,
         reasoningEffort: request.reasoning_effort,
+        ...getToolRepairLogFields(result),
         responseStatus: 200,
         latency,
         isStream: true,
@@ -329,6 +408,7 @@ router.post('/completions', async (ctx: Context) => {
           actualModel: usedActualModel,
           latency: finalLatency,
           isStream: true,
+          data: getToolRepairLogFields(result),
         })
       }
 
@@ -379,6 +459,7 @@ router.post('/completions', async (ctx: Context) => {
           accountId: usedAccount.id,
           model: request.model,
           latency: finalLatency,
+          data: getToolRepairLogFields(result),
         })
 
         if (sendToClient && !wrapperStream.destroyed && !wrapperStream.writableEnded) {
@@ -488,6 +569,7 @@ router.post('/completions', async (ctx: Context) => {
         userInput,
         webSearch: request.web_search,
         reasoningEffort: request.reasoning_effort,
+        ...getToolRepairLogFields(result),
         responseStatus: 200,
         responseBody: JSON.stringify(responseBody),
         latency,
@@ -501,6 +583,7 @@ router.post('/completions', async (ctx: Context) => {
         actualModel: usedActualModel,
         latency,
         isStream: false,
+        data: getToolRepairLogFields(result),
       })
       ctx.body = responseBody
     }
@@ -509,40 +592,54 @@ router.post('/completions', async (ctx: Context) => {
     proxyStatusManager.recordRequestFailure(latency)
 
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-    const errorStack = error instanceof Error ? error.stack : undefined
+    const isTimeout = error instanceof RequestTimeoutError
+    const isClientDisconnect = error instanceof ClientDisconnectedError
+    const statusCode = isTimeout ? 504 : isClientDisconnect ? 499 : 500
+    const errorType = isTimeout
+      ? 'timeout_error'
+      : isClientDisconnect
+        ? 'client_disconnected_error'
+        : 'internal_error'
+    const errorCode = isTimeout
+      ? 'request_timeout'
+      : isClientDisconnect
+        ? 'client_disconnected'
+        : null
+    const errorStack = !isTimeout && !isClientDisconnect && error instanceof Error
+      ? error.stack
+      : undefined
+    const exceptionPayload = isTimeout
+      ? createTimeoutErrorPayload(errorMessage, requestId)
+      : {
+          error: {
+            message: errorMessage,
+            type: errorType,
+            param: null,
+            code: errorCode,
+          },
+        }
 
-    ctx.status = 500
-    ctx.body = {
-      error: {
-        message: errorMessage,
-        type: 'internal_error',
-        param: null,
-        code: null,
-      },
+    if (!isClientDisconnect) {
+      ctx.status = statusCode
+      ctx.body = exceptionPayload
     }
 
-    storeManager.addLog('error', `Request exception: ${errorMessage}`, {
+    storeManager.addLog(isClientDisconnect ? 'warn' : 'error', `Request exception: ${errorMessage}`, {
       requestId,
       providerId: provider.id,
       accountId: account.id,
       model: request.model,
       latency,
       error: errorMessage,
+      data: getToolRepairLogFields(),
     })
 
     const userInput = extractUserInput(request.messages)
-    const exceptionResponseBody = JSON.stringify({
-      error: {
-        message: errorMessage,
-        type: 'internal_error',
-        param: null,
-        code: null,
-      },
-    })
+    const exceptionResponseBody = isClientDisconnect ? undefined : JSON.stringify(exceptionPayload)
     storeManager.addRequestLog({
       timestamp: startTime,
       status: 'error',
-      statusCode: 500,
+      statusCode,
       method: 'POST',
       url: '/v1/chat/completions',
       model: request.model,
@@ -555,7 +652,8 @@ router.post('/completions', async (ctx: Context) => {
       userInput,
       webSearch: request.web_search,
       reasoningEffort: request.reasoning_effort,
-      responseStatus: 500,
+      ...getToolRepairLogFields(),
+      responseStatus: statusCode,
       responseBody: exceptionResponseBody,
       latency,
       isStream: request.stream || false,
@@ -564,6 +662,10 @@ router.post('/completions', async (ctx: Context) => {
     })
 
     storeManager.recordRequestInStats(false, latency, request.model, provider.id, account.id)
+  } finally {
+    requestDeadline.dispose()
+    ctx.req.removeListener('aborted', abortForClientDisconnect)
+    ctx.res.removeListener('close', onResponseClose)
   }
 })
 

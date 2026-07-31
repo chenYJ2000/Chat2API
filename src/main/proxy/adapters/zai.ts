@@ -267,7 +267,7 @@ export class ZaiAdapter {
     )
 
     if (response.status !== 200 && response.status !== 201) {
-      console.error('[Z.ai] Create chat response:', response.status, response.data)
+      console.error('[Z.ai] Create chat failed with status:', response.status)
       throw new Error(`Failed to create chat: HTTP ${response.status}`)
     }
 
@@ -319,14 +319,14 @@ export class ZaiAdapter {
         }
       )
 
-      console.log('[Z.ai] Delete all chats response:', response.status, response.data)
+      console.log('[Z.ai] Delete all chats response status:', response.status)
       
       if (response.status === 200 && response.data === true) {
         console.log('[Z.ai] All chats deleted successfully')
         return true
       }
       
-      console.warn('[Z.ai] Delete all chats failed:', response.status, response.data)
+      console.warn('[Z.ai] Delete all chats failed with status:', response.status)
       return false
     } catch (error) {
       console.error('[Z.ai] Failed to delete all chats:', error)
@@ -539,22 +539,16 @@ export class ZaiAdapter {
 
     console.log('[Z.ai] Response status:', response.status)
     if (response.status !== 200) {
-      console.log('[Z.ai] Request body:', JSON.stringify(requestBody, null, 2))
-      console.log('[Z.ai] Signature:', signature)
-      console.log('[Z.ai] Timestamp:', timestamp)
-      console.log('[Z.ai] RequestId:', requestId)
-      console.log('[Z.ai] UserId:', userId)
       if (response.data && typeof response.data.on === 'function') {
-        const chunks: Buffer[] = []
-        response.data.on('data', (chunk: Buffer) => chunks.push(chunk))
+        let errorBytes = 0
+        response.data.on('data', (chunk: Buffer) => {
+          errorBytes += chunk.length
+        })
         await new Promise<void>((resolve) => {
           response.data.on('end', () => resolve())
           response.data.on('error', () => resolve())
         })
-        const errorBody = Buffer.concat(chunks).toString('utf8')
-        console.log('[Z.ai] Error response body:', errorBody)
-      } else if (response.data) {
-        console.log('[Z.ai] Error response data:', JSON.stringify(response.data, null, 2))
+        console.log('[Z.ai] Error response bytes:', errorBytes)
       }
     }
 
@@ -638,7 +632,6 @@ export class ZaiStreamHandler {
           model: this.model,
           object: 'chat.completion.chunk',
           choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
           created: this.created,
         })}\n\n`
       )
@@ -747,7 +740,7 @@ export class ZaiStreamHandler {
             // Check if we emitted tool calls
             const finishReason = this.toolCallState.hasEmittedToolCall ? 'tool_calls' : 'stop'
             
-            const usage = result.usage || { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+            const usage = result.usage
             
             transStream.write(
               `data: ${JSON.stringify({
@@ -755,7 +748,7 @@ export class ZaiStreamHandler {
                 model: this.model,
                 object: 'chat.completion.chunk',
                 choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
-                usage,
+                ...(usage ? { usage } : {}),
                 created: this.created,
               })}\n\n`
             )
@@ -818,7 +811,6 @@ export class ZaiStreamHandler {
             finish_reason: 'stop',
           },
         ],
-        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
         created: this.created,
       }
 

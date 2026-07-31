@@ -7,7 +7,7 @@ import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios'
 import http2 from 'http2'
 import { PassThrough } from 'stream'
 import { Account, Provider } from '../store/types'
-import { ForwardResult, ChatCompletionRequest, ProxyContext } from './types'
+import { AccountSelection, ForwardResult, ChatCompletionRequest, ProxyContext } from './types'
 import { proxyStatusManager } from './status'
 import { loadBalancer } from './loadbalancer'
 import { storeManager } from '../store/store'
@@ -21,6 +21,7 @@ import {
   QwenAiAdapter,
   QwenAiRequestValidationError,
   QwenAiStreamHandler,
+  type QwenAiUpstreamCompletionState,
 } from './adapters/qwen-ai'
 import { ZaiAdapter, ZaiStreamHandler } from './adapters/zai'
 import { MiniMaxAdapter, MiniMaxStreamHandler } from './adapters/minimax'
@@ -32,6 +33,14 @@ import {
   ToolCallingResponseError,
 } from './toolCalling/ToolCallingEngine'
 import type { ToolCallingTransformResult } from './toolCalling/types'
+import {
+  createToolRepairLogData,
+  createToolRepairRequest,
+  createToolRepairTelemetry,
+  enforceSingleToolRepairResult,
+  mergeOriginalReasoningIntoRepairResponse,
+  shouldAttemptToolRepair,
+} from './toolCalling/repair'
 import { isReasoningEnabled } from './utils/reasoning'
 import { sessionManager } from './sessionManager'
 import {
@@ -39,6 +48,11 @@ import {
   SummaryGenerator,
   type ChatMessage as ContextChatMessage,
 } from './services/contextManagementService'
+import {
+  getAbortReason,
+  getRemainingTimeout,
+  throwIfAborted,
+} from './requestLifecycle'
 
 function shouldDeleteSession(): boolean {
   return sessionManager.shouldDeleteAfterChat()
@@ -77,13 +91,113 @@ function isRetryableStatus(status: number | undefined, error?: string): boolean 
     || status >= 500
 }
 
-function shouldMarkAccountFailed(status: number | undefined, error?: string): boolean {
+function shouldMarkAccountFailed(
+  status: number | undefined,
+  error?: string,
+  toolCallingFailure?: ForwardResult['toolCallingFailure'],
+): boolean {
+  if (
+    toolCallingFailure?.code === 'upstream_multiplexed_response'
+    || toolCallingFailure?.code === 'upstream_incomplete_response'
+  ) return false
   if (isToolCallingResponseErrorMessage(error)) return false
   return status === undefined
     || status === 401
     || status === 403
     || status === 429
     || (status !== undefined && status >= 500)
+}
+
+function recordAccountFailure(
+  selection: AccountSelection,
+  status: number | undefined,
+): void {
+  loadBalancer.markAccountFailed(selection.account.id)
+
+  if (status !== 401 && status !== 403) return
+
+  const checkedAt = Date.now()
+  storeManager.updateAccount(selection.account.id, {
+    status: 'error',
+    errorMessage: `Authentication failed (HTTP ${status})`,
+    lastStatusCheck: checkedAt,
+  })
+  storeManager.addLog('error', 'Account disabled after an authentication failure', {
+    providerId: selection.provider.id,
+    accountId: selection.account.id,
+    data: { status },
+  })
+}
+
+class QwenAiMultiplexedResponseError extends Error {
+  readonly status = 502
+  readonly diagnostics: ToolCallingTransformResult['plan']['diagnostics']
+
+  constructor(diagnostics: ToolCallingTransformResult['plan']['diagnostics']) {
+    super('Qwen upstream multiplexed multiple unidentified responses; retry with a fresh chat')
+    this.name = 'QwenAiMultiplexedResponseError'
+    this.diagnostics = diagnostics
+  }
+}
+
+class QwenAiIncompleteResponseError extends Error {
+  readonly status = 502
+  readonly diagnostics: ToolCallingTransformResult['plan']['diagnostics']
+  readonly toolName?: string
+  readonly reasoningContent?: string
+
+  constructor(
+    completionState: Exclude<QwenAiUpstreamCompletionState, 'complete'>,
+    diagnostics: ToolCallingTransformResult['plan']['diagnostics'],
+    toolName?: string,
+    reasoningContent?: string,
+  ) {
+    const reason = completionState === 'output_limit'
+      ? 'the output limit was reached'
+      : 'the upstream response ended early'
+    super(`Qwen upstream did not complete the required tool call because ${reason}`)
+    this.name = 'QwenAiIncompleteResponseError'
+    this.diagnostics = diagnostics
+    this.toolName = toolName
+    this.reasoningContent = reasoningContent
+  }
+}
+
+function createForwardFailure(error: unknown, startTime: number): ForwardResult {
+  const message = error instanceof Error ? error.message : 'Unknown error'
+  const toolCallingFailure: ForwardResult['toolCallingFailure'] = error instanceof ToolCallingResponseError
+    ? {
+        code: error.code,
+        toolName: error.toolName,
+        repairable: error.repairable,
+        diagnostics: error.diagnostics,
+        validationErrors: [...error.validationErrors],
+        validationIssues: error.validationIssues.map((issue) => ({ ...issue })),
+        rejectedArguments: error.rejectedArguments,
+        reasoningContent: error.reasoningContent,
+      }
+    : error instanceof QwenAiMultiplexedResponseError
+      ? {
+          code: 'upstream_multiplexed_response',
+          repairable: false,
+          diagnostics: error.diagnostics,
+        }
+      : error instanceof QwenAiIncompleteResponseError
+        ? {
+            code: 'upstream_incomplete_response',
+            toolName: error.toolName,
+            repairable: true,
+            diagnostics: error.diagnostics,
+            reasoningContent: error.reasoningContent,
+          }
+      : undefined
+  return {
+    success: false,
+    status: getForwardErrorStatus(error),
+    error: message,
+    latency: Date.now() - startTime,
+    ...(toolCallingFailure ? { toolCallingFailure } : {}),
+  }
 }
 
 type ProviderForwarder = {
@@ -94,7 +208,8 @@ type ProviderForwarder = {
     account: Account,
     provider: Provider,
     actualModel: string,
-    startTime: number
+    startTime: number,
+    context: ProxyContext,
   ) => Promise<ForwardResult>
 }
 
@@ -118,8 +233,8 @@ export class RequestForwarder {
     {
       name: 'glm',
       matches: GLMAdapter.isGLMProvider,
-      forward: (request, account, provider, actualModel, startTime) =>
-        this.forwardGLM(request, account, provider, actualModel, startTime),
+      forward: (request, account, provider, actualModel, startTime, context) =>
+        this.forwardGLM(request, account, provider, actualModel, startTime, context),
     },
     {
       name: 'kimi',
@@ -197,6 +312,143 @@ export class RequestForwarder {
   private applyToolCallsToResponse(result: any, transformed: ToolCallingTransformResult): void {
     const engine = new ToolCallingEngine(storeManager.getConfig().toolCallingConfig)
     engine.applyNonStreamResponse(result, transformed.plan)
+  }
+
+  private applyQwenToolCallsToResponse(
+    result: any,
+    transformed: ToolCallingTransformResult,
+    alternativeContents: string[],
+    hasUnidentifiedMultiplexedResponse: boolean,
+    upstreamCompletionState: QwenAiUpstreamCompletionState,
+  ): any {
+    const originalContent = typeof result?.choices?.[0]?.message?.content === 'string'
+      ? result.choices[0].message.content
+      : ''
+    const candidates = [...alternativeContents, originalContent].filter(
+      (content, index, values) => content.trim() && values.indexOf(content) === index
+    )
+    const partialToolName = this.getKnownPartialQwenToolName(originalContent, transformed)
+
+    if (candidates.length <= 1) {
+      try {
+        this.applyToolCallsToResponse(result, transformed)
+        return result
+      } catch (error) {
+        if (hasUnidentifiedMultiplexedResponse && error instanceof ToolCallingResponseError) {
+          throw new QwenAiMultiplexedResponseError(
+            error.diagnostics ?? transformed.plan.diagnostics
+          )
+        }
+        if (
+          error instanceof ToolCallingResponseError
+          && (upstreamCompletionState !== 'complete' || partialToolName)
+        ) {
+          throw new QwenAiIncompleteResponseError(
+            upstreamCompletionState === 'complete' ? 'incomplete' : upstreamCompletionState,
+            error.diagnostics ?? transformed.plan.diagnostics,
+            partialToolName,
+            error.reasoningContent,
+          )
+        }
+        throw error
+      }
+    }
+
+    const baseDiagnostics = { ...transformed.plan.diagnostics }
+    let lastError: unknown
+    let candidateAttempts: NonNullable<
+      ToolCallingTransformResult['plan']['diagnostics']['candidateAttempts']
+    > = []
+
+    for (const [candidateIndex, content] of candidates.entries()) {
+      const candidateResult = {
+        ...result,
+        choices: (result.choices ?? []).map((choice: any, index: number) =>
+          index === 0
+            ? {
+                ...choice,
+                message: { ...choice.message, content },
+              }
+            : choice
+        ),
+      }
+      transformed.plan.diagnostics = {
+        ...baseDiagnostics,
+        candidateContentCount: candidates.length,
+        selectedCandidateIndex: candidateIndex,
+      }
+
+      try {
+        this.applyToolCallsToResponse(candidateResult, transformed)
+        return candidateResult
+      } catch (error) {
+        lastError = error
+        const diagnostics = error instanceof ToolCallingResponseError
+          ? error.diagnostics
+          : undefined
+        candidateAttempts = [...candidateAttempts, {
+          index: candidateIndex,
+          chars: content.length,
+          parserFormat: diagnostics?.parserFormat,
+          detectedProtocols: diagnostics?.detectedProtocols
+            ? [...diagnostics.detectedProtocols]
+            : undefined,
+          malformedReason: diagnostics?.malformedReason,
+          rawContentPreview: diagnostics?.rawContentPreview,
+        }]
+      }
+    }
+
+    const finalDiagnostics = lastError instanceof ToolCallingResponseError
+      ? {
+          ...(lastError.diagnostics ?? transformed.plan.diagnostics),
+          candidateAttempts,
+        }
+      : {
+          ...transformed.plan.diagnostics,
+          candidateAttempts,
+        }
+
+    if (hasUnidentifiedMultiplexedResponse) {
+      throw new QwenAiMultiplexedResponseError(finalDiagnostics)
+    }
+
+    if (
+      lastError instanceof ToolCallingResponseError
+      && (upstreamCompletionState !== 'complete' || partialToolName)
+    ) {
+      throw new QwenAiIncompleteResponseError(
+        upstreamCompletionState === 'complete' ? 'incomplete' : upstreamCompletionState,
+        finalDiagnostics,
+        partialToolName,
+        lastError instanceof ToolCallingResponseError ? lastError.reasoningContent : undefined,
+      )
+    }
+
+    if (lastError instanceof ToolCallingResponseError) {
+      throw new ToolCallingResponseError(
+        lastError.message,
+        lastError.code,
+        finalDiagnostics,
+        lastError.validationErrors,
+        lastError.toolName,
+        lastError.repairable,
+        lastError.reasoningContent,
+        lastError.validationIssues,
+        lastError.rejectedArguments,
+      )
+    }
+
+    throw lastError ?? new Error('Qwen upstream candidates did not contain a valid tool call')
+  }
+
+  private getKnownPartialQwenToolName(
+    content: string,
+    transformed: ToolCallingTransformResult,
+  ): string | undefined {
+    const match = /(?:<\|CHAT2API\|invoke|<invoke)\b[^>]*\bname\s*=\s*["']([^"']+)["']/i.exec(content)
+    const name = match?.[1]?.trim()
+    return name && transformed.plan.allowedToolNames.has(name) ? name : undefined
   }
 
   private createBufferedResponseStream(result: any, model: string): PassThrough {
@@ -346,10 +598,14 @@ export class RequestForwarder {
 
     let lastError: string | undefined
     let lastStatus: number | undefined
+    let lastToolCallingFailure: ForwardResult['toolCallingFailure']
     let currentSelection = { account, provider, actualModel }
     const attemptedAccountIds = new Set<string>()
+    let toolRepairAttempted = false
+    let toolRepairTelemetry: ForwardResult['toolRepair']
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      throwIfAborted(context.signal)
       let modifiedRequest = request
 
       if (config.contextManagement?.enabled && modifiedRequest.messages && modifiedRequest.messages.length > 0) {
@@ -374,6 +630,7 @@ export class RequestForwarder {
           }))
 
           const processResult = await contextService.process(contextMessages)
+          throwIfAborted(context.signal)
 
           if (processResult.finalCount !== originalCount) {
             console.log(
@@ -397,39 +654,165 @@ export class RequestForwarder {
             }
           }
         } catch (error) {
+          if (context.signal?.aborted) throw getAbortReason(context.signal)
           console.error('[Forwarder] Context management failed:', error)
         }
       }
 
       try {
-        const result = await this.doForward(
+        let result = await this.doForward(
           modifiedRequest,
           currentSelection.account,
           currentSelection.provider,
           currentSelection.actualModel,
           context,
         )
+        throwIfAborted(context.signal)
+
+        if (shouldAttemptToolRepair(result, modifiedRequest, toolRepairAttempted)) {
+          throwIfAborted(context.signal)
+          toolRepairAttempted = true
+          const firstResult = result
+          const repairRequest = createToolRepairRequest(modifiedRequest, result)
+          const failureDiagnostics = result.toolCallingFailure?.diagnostics
+          const originalReasoningContent = result.toolCallingFailure?.reasoningContent
+          const firstValidationIssues = result.toolCallingFailure?.validationIssues
+            ?? failureDiagnostics?.schemaValidationIssues
+            ?? []
+          const firstValidationErrors = result.toolCallingFailure?.validationErrors
+            ?? failureDiagnostics?.schemaValidationErrors
+            ?? (result.error ? [result.error] : [])
+          const repairStartedAt = Date.now()
+          storeManager.addLog('warn', 'Retrying required tool call once with reasoning disabled', {
+            requestId: context.requestId,
+            providerId: currentSelection.provider.id,
+            accountId: currentSelection.account.id,
+            model: request.model,
+            data: {
+              repair_attempted: true,
+              repair_attempts: 1,
+              repair_result: 'attempting',
+              first_validation_error: firstValidationErrors[0] ?? null,
+              first_validation_errors: [...firstValidationErrors],
+              first_field_types: firstValidationIssues.map((issue) => ({
+                json_pointer: issue.jsonPointer,
+                expected: issue.expected,
+                actual_type: issue.actualType,
+                keyword: issue.keyword,
+              })),
+              repair_temperature: repairRequest.temperature,
+              repair_reasoning_effort: repairRequest.reasoning_effort,
+              repair_parallel_tool_calls: repairRequest.parallel_tool_calls,
+              toolName: result.toolCallingFailure?.toolName,
+              failureCode: result.toolCallingFailure?.code,
+              reason: result.error,
+              selectedProtocol: failureDiagnostics?.protocol,
+              detectedProtocols: failureDiagnostics?.detectedProtocols,
+              rawResponsePreview: failureDiagnostics?.rawContentPreview,
+            },
+          })
+
+          const rawRepaired = await this.doForward(
+            repairRequest,
+            currentSelection.account,
+            currentSelection.provider,
+            currentSelection.actualModel,
+            context,
+          )
+          throwIfAborted(context.signal)
+          const constrainedRepair = enforceSingleToolRepairResult(
+            rawRepaired,
+            result.toolCallingFailure?.toolName,
+          )
+          toolRepairTelemetry = createToolRepairTelemetry(firstResult, constrainedRepair)
+          storeManager.addLog(
+            constrainedRepair.success ? 'info' : 'error',
+            constrainedRepair.success
+              ? 'Bounded tool call repair succeeded'
+              : 'Bounded tool call repair failed',
+            {
+              requestId: context.requestId,
+              providerId: currentSelection.provider.id,
+              accountId: currentSelection.account.id,
+              model: request.model,
+              latency: Date.now() - repairStartedAt,
+              data: {
+                ...createToolRepairLogData(toolRepairTelemetry),
+                tool_name: result.toolCallingFailure?.toolName,
+                failure_code: constrainedRepair.toolCallingFailure?.code ?? null,
+              },
+            },
+          )
+          const repaired = constrainedRepair.success && constrainedRepair.body
+            ? {
+                ...constrainedRepair,
+                body: mergeOriginalReasoningIntoRepairResponse(
+                  constrainedRepair.body,
+                  modifiedRequest,
+                  originalReasoningContent,
+                ),
+              }
+            : constrainedRepair
+          const repairedWithTelemetry = {
+            ...repaired,
+            toolRepair: toolRepairTelemetry,
+          }
+          result = repairedWithTelemetry.success && request.stream && repairedWithTelemetry.body
+            ? {
+                ...repairedWithTelemetry,
+                body: undefined,
+                stream: this.createBufferedResponseStream(
+                  repairedWithTelemetry.body,
+                  currentSelection.actualModel,
+                ),
+                skipTransform: true,
+                latency: Date.now() - startTime,
+              }
+            : {
+                ...repairedWithTelemetry,
+                latency: Date.now() - startTime,
+                ...(!repairedWithTelemetry.success && repairedWithTelemetry.toolCallingFailure ? {
+                  toolCallingFailure: {
+                    ...repairedWithTelemetry.toolCallingFailure,
+                    repairAttempted: true,
+                    repairAttempts: 1,
+                  },
+                } : {}),
+              }
+        }
 
         if (result.success) {
-          return { ...result, selection: currentSelection }
+          return {
+            ...result,
+            ...(toolRepairTelemetry ? { toolRepair: toolRepairTelemetry } : {}),
+            selection: currentSelection,
+          }
         }
 
         lastError = result.error
         lastStatus = result.status ?? getForwardErrorMessageStatus(result.error)
+        lastToolCallingFailure = result.toolCallingFailure
+          ? { ...result.toolCallingFailure }
+          : undefined
       } catch (error) {
-        lastError = error instanceof Error ? error.message : 'Unknown error'
-        lastStatus = getForwardErrorStatus(error)
+        if (context.signal?.aborted) throw getAbortReason(context.signal)
+        const failure = createForwardFailure(error, startTime)
+        lastError = failure.error
+        lastStatus = failure.status
+        lastToolCallingFailure = failure.toolCallingFailure
+          ? { ...failure.toolCallingFailure }
+          : undefined
       }
 
       if (!isRetryableStatus(lastStatus, lastError) || attempt >= maxRetries) {
-        if (shouldMarkAccountFailed(lastStatus, lastError)) {
-          loadBalancer.markAccountFailed(currentSelection.account.id)
+        if (shouldMarkAccountFailed(lastStatus, lastError, lastToolCallingFailure)) {
+          recordAccountFailure(currentSelection, lastStatus)
         }
         break
       }
 
-      if (shouldMarkAccountFailed(lastStatus, lastError)) {
-        loadBalancer.markAccountFailed(currentSelection.account.id)
+      if (shouldMarkAccountFailed(lastStatus, lastError, lastToolCallingFailure)) {
+        recordAccountFailure(currentSelection, lastStatus)
       }
 
       attemptedAccountIds.add(currentSelection.account.id)
@@ -453,7 +836,7 @@ export class RequestForwarder {
         // Every matching account has been tried. Retrying the last account can
         // still recover from a transient provider-wide outage.
         attemptedAccountIds.clear()
-        await this.delay(proxyStatusManager.getConfig().retryDelay || 5000)
+        await this.delay(proxyStatusManager.getConfig().retryDelay || 5000, context.signal)
       }
     }
 
@@ -463,6 +846,8 @@ export class RequestForwarder {
       error: lastError || 'Request failed after retries',
       latency: Date.now() - startTime,
       selection: currentSelection,
+      ...(lastToolCallingFailure ? { toolCallingFailure: lastToolCallingFailure } : {}),
+      ...(toolRepairTelemetry ? { toolRepair: toolRepairTelemetry } : {}),
     }
   }
 
@@ -477,10 +862,11 @@ export class RequestForwarder {
     context: ProxyContext
   ): Promise<ForwardResult> {
     const startTime = Date.now()
+    throwIfAborted(context.signal)
 
     const dedicatedForwarder = this.providerForwarders.find(forwarder => forwarder.matches(provider))
     if (dedicatedForwarder) {
-      return dedicatedForwarder.forward(request, account, provider, actualModel, startTime)
+      return dedicatedForwarder.forward(request, account, provider, actualModel, startTime, context)
     }
 
     try {
@@ -494,7 +880,11 @@ export class RequestForwarder {
         url,
         headers,
         data: body,
-        timeout: proxyStatusManager.getConfig().timeout,
+        timeout: getRemainingTimeout(
+          context.deadlineAt,
+          context.timeoutMs ?? proxyStatusManager.getConfig().timeout,
+        ),
+        signal: context.signal,
         responseType: request.stream ? 'stream' : 'json',
         validateStatus: () => true,
       }
@@ -529,6 +919,7 @@ export class RequestForwarder {
         latency,
       }
     } catch (error) {
+      if (context.signal?.aborted) throw getAbortReason(context.signal)
       const latency = Date.now() - startTime
 
       if (error instanceof AxiosError) {
@@ -619,6 +1010,21 @@ export class RequestForwarder {
         transformed.plan,
         request.model
       )
+
+      if (request.stream && transformed.plan.shouldParseResponse) {
+        const bufferedResult = await handler.handleNonStream(response.data)
+        this.applyToolCallsToResponse(bufferedResult, transformed)
+        if (deleteSessionCallback) await deleteSessionCallback()
+        return {
+          success: true,
+          status: response.status,
+          headers: this.extractHeaders(response.headers),
+          stream: this.createBufferedResponseStream(bufferedResult, actualModel),
+          skipTransform: true,
+          latency: Date.now() - startTime,
+          providerSessionId: sessionId,
+        }
+      }
       
       if (request.stream) {
         const transformedStream = await handler.handleStream(response.data)
@@ -652,12 +1058,7 @@ export class RequestForwarder {
         providerSessionId: sessionId,
       }
     } catch (error) {
-      const latency = Date.now() - startTime
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        latency,
-      }
+      return createForwardFailure(error, startTime)
     }
   }
 
@@ -669,9 +1070,11 @@ export class RequestForwarder {
     account: Account,
     provider: Provider,
     actualModel: string,
-    startTime: number
+    startTime: number,
+    context: ProxyContext,
   ): Promise<ForwardResult> {
     try {
+      throwIfAborted(context.signal)
       const transformed = this.transformRequestForPromptToolUse(request, provider)
       const transformedRequest = {
         ...request,
@@ -683,6 +1086,14 @@ export class RequestForwarder {
       const glmReasoningEffort = transformedRequest.reasoning_effort
         ?? transformedRequest.reasoningEffort
         ?? transformedRequest.enable_thinking
+      const createGLMRequestOptions = () => ({
+        signal: context.signal,
+        timeoutMs: getRemainingTimeout(
+          context.deadlineAt,
+          context.timeoutMs ?? proxyStatusManager.getConfig().timeout,
+        ),
+        requestId: context.requestId,
+      })
       const { response, conversationId } = await adapter.chatCompletion({
         model: actualModel,
         originalModel: request.model,
@@ -692,7 +1103,8 @@ export class RequestForwarder {
         web_search: transformedRequest.web_search,
         reasoningEffort: glmReasoningEffort,
         deep_research: transformedRequest.deep_research,
-      })
+      }, createGLMRequestOptions())
+      throwIfAborted(context.signal)
 
       const latency = Date.now() - startTime
 
@@ -718,6 +1130,23 @@ export class RequestForwarder {
       }
 
       const handler = new GLMStreamHandler(actualModel, undefined, undefined, transformed.plan)
+
+      if (request.stream && transformed.plan.shouldParseResponse) {
+        const bufferedResult = await handler.handleNonStream(response.data, createGLMRequestOptions())
+        throwIfAborted(context.signal)
+        this.applyToolCallsToResponse(bufferedResult, transformed)
+        const convId = handler.getConversationId()
+        if (shouldDeleteSession() && convId) await adapter.deleteConversation(convId)
+        return {
+          success: true,
+          status: response.status,
+          headers: this.extractHeaders(response.headers),
+          stream: this.createBufferedResponseStream(bufferedResult, actualModel),
+          skipTransform: true,
+          latency: Date.now() - startTime,
+          providerSessionId: convId || undefined,
+        }
+      }
       
       if (request.stream) {
         const transformedStream = await handler.handleStream(response.data)
@@ -747,7 +1176,8 @@ export class RequestForwarder {
         }
       }
 
-      const result = await handler.handleNonStream(response.data)
+      const result = await handler.handleNonStream(response.data, createGLMRequestOptions())
+      throwIfAborted(context.signal)
       
       this.applyToolCallsToResponse(result, transformed)
       
@@ -767,13 +1197,8 @@ export class RequestForwarder {
         providerSessionId: handler.getConversationId() ?? undefined,
       }
     } catch (error) {
-      const latency = Date.now() - startTime
-      return {
-        success: false,
-        status: getForwardErrorStatus(error),
-        error: error instanceof Error ? error.message : 'Unknown error',
-        latency,
-      }
+      if (context.signal?.aborted) throw getAbortReason(context.signal)
+      return createForwardFailure(error, startTime)
     }
   }
 
@@ -819,6 +1244,22 @@ export class RequestForwarder {
         true,
         transformed.plan,
       )
+
+      if (request.stream && transformed.plan.shouldParseResponse) {
+        const bufferedResult = await handler.handleNonStream(response.data)
+        this.applyToolCallsToResponse(bufferedResult, transformed)
+        const realChatId = handler.getConversationId()
+        if (shouldDeleteSession() && realChatId) await adapter.deleteConversation(realChatId)
+        return {
+          success: true,
+          status: response.status,
+          headers: this.extractHeaders(response.headers),
+          stream: this.createBufferedResponseStream(bufferedResult, actualModel),
+          skipTransform: true,
+          latency: Date.now() - startTime,
+          providerSessionId: realChatId || undefined,
+        }
+      }
       
       if (request.stream) {
         const transformedStream = await handler.handleStream(response.data)
@@ -868,13 +1309,7 @@ export class RequestForwarder {
         providerSessionId: handler.getConversationId() ?? undefined,
       }
     } catch (error) {
-      const latency = Date.now() - startTime
-      return {
-        success: false,
-        status: getForwardErrorStatus(error),
-        error: error instanceof Error ? error.message : 'Unknown error',
-        latency,
-      }
+      return createForwardFailure(error, startTime)
     }
   }
 
@@ -931,6 +1366,22 @@ export class RequestForwarder {
 
       const handler = new QwenStreamHandler(actualModel, deleteSessionCallback, transformed.plan)
 
+      if (request.stream && transformed.plan.shouldParseResponse) {
+        const bufferedResult = await handler.handleNonStream(response.data, response)
+        this.applyToolCallsToResponse(bufferedResult, transformed)
+        const sid = handler.getSessionId()
+        if (deleteSessionCallback && sid) await deleteSessionCallback(sid)
+        return {
+          success: true,
+          status: response.status,
+          headers: this.extractHeaders(response.headers),
+          stream: this.createBufferedResponseStream(bufferedResult, actualModel),
+          skipTransform: true,
+          latency: Date.now() - startTime,
+          providerSessionId: sessionId,
+        }
+      }
+
       if (request.stream) {
         const transformedStream = await handler.handleStream(response.data, response)
 
@@ -963,12 +1414,7 @@ export class RequestForwarder {
         providerSessionId: sessionId,
       }
     } catch (error) {
-      const latency = Date.now() - startTime
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        latency,
-      }
+      return createForwardFailure(error, startTime)
     }
   }
 
@@ -1034,12 +1480,22 @@ export class RequestForwarder {
         // through as ordinary streamed content.
         if (transformed.plan.shouldParseResponse) {
           const bufferedResult = await handler.handleNonStream(response.data)
-          this.applyToolCallsToResponse(bufferedResult, transformed)
+          transformed.plan.diagnostics = {
+            ...transformed.plan.diagnostics,
+            upstreamEventSummary: handler.getUpstreamEventSummary(),
+          }
+          const parsedBufferedResult = this.applyQwenToolCallsToResponse(
+            bufferedResult,
+            transformed,
+            handler.getAlternativeAnswerContents(),
+            handler.hasUnidentifiedMultiplexedResponse(),
+            handler.getUpstreamCompletionState(),
+          )
           return {
             success: true,
             status: response.status,
             headers: this.extractHeaders(response.headers),
-            stream: this.createBufferedResponseStream(bufferedResult, actualModel),
+            stream: this.createBufferedResponseStream(parsedBufferedResult, actualModel),
             skipTransform: true,
             latency: Date.now() - startTime,
             providerSessionId: chatId,
@@ -1061,24 +1517,28 @@ export class RequestForwarder {
 
       const result = await handler.handleNonStream(response.data)
 
-      this.applyToolCallsToResponse(result, transformed)
+      transformed.plan.diagnostics = {
+        ...transformed.plan.diagnostics,
+        upstreamEventSummary: handler.getUpstreamEventSummary(),
+      }
+      const parsedResult = this.applyQwenToolCallsToResponse(
+        result,
+        transformed,
+        handler.getAlternativeAnswerContents(),
+        handler.hasUnidentifiedMultiplexedResponse(),
+        handler.getUpstreamCompletionState(),
+      )
 
       return {
         success: true,
         status: response.status,
         headers: this.extractHeaders(response.headers),
-        body: result,
+        body: parsedResult,
         latency,
         providerSessionId: chatId,
       }
     } catch (error) {
-      const latency = Date.now() - startTime
-      return {
-        success: false,
-        status: getForwardErrorStatus(error),
-        error: error instanceof Error ? error.message : 'Unknown error',
-        latency,
-      }
+      return createForwardFailure(error, startTime)
     }
   }
 
@@ -1132,6 +1592,21 @@ export class RequestForwarder {
 
       const handler = new ZaiStreamHandler(actualModel, deleteChatCallback)
       handler.setChatId(chatId)
+
+      if (request.stream === true && transformed.plan.shouldParseResponse) {
+        const bufferedResult = await handler.handleNonStream(response.data)
+        this.applyToolCallsToResponse(bufferedResult, transformed)
+        if (deleteChatCallback) await deleteChatCallback(chatId)
+        return {
+          success: true,
+          status: response.status,
+          headers: this.extractHeaders(response.headers),
+          stream: this.createBufferedResponseStream(bufferedResult, actualModel),
+          skipTransform: true,
+          latency: Date.now() - startTime,
+          providerSessionId: chatId,
+        }
+      }
       
       if (request.stream === true) {
         const transformedStream = await handler.handleStream(response.data)
@@ -1164,12 +1639,7 @@ export class RequestForwarder {
         providerSessionId: chatId,
       }
     } catch (error) {
-      const latency = Date.now() - startTime
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        latency,
-      }
+      return createForwardFailure(error, startTime)
     }
   }
 
@@ -1328,6 +1798,27 @@ export class RequestForwarder {
 
       const handler = new MimoStreamHandler(actualModel, conversationId, 'separate', transformed.plan)
 
+      if (request.stream && transformed.plan.shouldParseResponse) {
+        const buffered = await handler.handleNonStream(response.data)
+        const bufferedResult = JSON.parse(buffered)
+        this.applyToolCallsToResponse(bufferedResult, transformed)
+        await adapter.generateConversationTitle(
+          conversationId,
+          query,
+          handler.getAssistantContentForTitle(),
+        )
+        if (deleteSessionCallback) await deleteSessionCallback(conversationId)
+        return {
+          success: true,
+          status: response.status,
+          headers: this.extractHeaders(response.headers),
+          stream: this.createBufferedResponseStream(bufferedResult, actualModel),
+          skipTransform: true,
+          latency: Date.now() - startTime,
+          providerSessionId: conversationId,
+        }
+      }
+
       if (request.stream) {
         const transformedStream = new PassThrough()
         const openAIStream = handler.handleStream(response.data)
@@ -1385,13 +1876,8 @@ export class RequestForwarder {
         providerSessionId: conversationId,
       }
     } catch (error) {
-      const latency = Date.now() - startTime
       console.error('[Mimo] Forward error:', error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-        latency,
-      }
+      return createForwardFailure(error, startTime)
     }
   }
 
@@ -1630,8 +2116,21 @@ export class RequestForwarder {
   /**
    * Delay
    */
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+  private delay(ms: number, signal?: AbortSignal): Promise<void> {
+    if (!signal) return new Promise(resolve => setTimeout(resolve, ms))
+    if (signal.aborted) return Promise.reject(getAbortReason(signal))
+
+    return new Promise((resolve, reject) => {
+      const onAbort = () => {
+        clearTimeout(timer)
+        reject(getAbortReason(signal))
+      }
+      const timer = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort)
+        resolve()
+      }, ms)
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
   }
 
   /**

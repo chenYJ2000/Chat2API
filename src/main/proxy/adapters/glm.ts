@@ -8,7 +8,11 @@ import crypto from 'crypto'
 import { Account, Provider } from '../../store/types'
 import { storeManager } from '../../store/store'
 import { PassThrough } from 'stream'
-import { resolveGLMChatMode, type GLMChatMode } from './providerModelOptions'
+import {
+  GLMRequestValidationError,
+  resolveGLMChatMode,
+  type GLMChatMode,
+} from './providerModelOptions'
 import { createParser } from 'eventsource-parser'
 import FormData from 'form-data'
 import mime from 'mime-types'
@@ -21,6 +25,11 @@ import {
 import { getProviderToolProfile } from '../toolCalling/providerProfiles'
 import { ToolStreamParser } from '../toolCalling/ToolStreamParser'
 import type { ToolCallingPlan } from '../toolCalling/types'
+import {
+  getAbortReason,
+  RequestTimeoutError,
+  throwIfAborted,
+} from '../requestLifecycle'
 
 const GLM_API_BASE = 'https://chatglm.cn/chatglm'
 const DEFAULT_ASSISTANT_ID = '65940acff94777010aa6b796'
@@ -79,6 +88,19 @@ interface ChatCompletionRequest {
   tool_choice?: any
 }
 
+export interface GLMRequestOptions {
+  signal?: AbortSignal
+  timeoutMs?: number
+  requestId?: string
+}
+
+function getGLMRequestTimeout(defaultMs: number, options?: GLMRequestOptions): number {
+  const requestedTimeout = options?.timeoutMs
+  return requestedTimeout === undefined || !Number.isFinite(requestedTimeout)
+    ? defaultMs
+    : Math.max(1, Math.min(defaultMs, requestedTimeout))
+}
+
 const tokenCache = new Map<string, TokenInfo>()
 
 function uuid(): string {
@@ -87,6 +109,85 @@ function uuid(): string {
     const v = c === 'x' ? r : (r & 0x3) | 0x8
     return v.toString(16)
   })
+}
+
+export class GLMUpstreamResponseError extends Error {
+  readonly status = 502
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'GLMUpstreamResponseError'
+  }
+}
+
+function sanitizeGLMUpstreamMessage(value: unknown): string {
+  return String(value ?? 'unknown upstream failure')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/Bearer\s+[A-Za-z0-9._~+\/-]+/gi, 'Bearer [REDACTED]')
+    .slice(0, 600)
+}
+
+function getGLMUpstreamFailure(result: any): string | undefined {
+  const status = typeof result?.status === 'string' ? result.status.toLowerCase() : ''
+  const isFailureStatus = ['intervene', 'error', 'failed', 'fail'].includes(status)
+  const lastError = result?.last_error
+  const hasLastError = typeof lastError === 'string'
+    ? Boolean(lastError.trim())
+    : lastError && typeof lastError === 'object'
+      ? Object.keys(lastError).length > 0
+      : Boolean(lastError)
+  if (!isFailureStatus && result?.success !== false && !hasLastError) return undefined
+
+  const detail = result?.last_error?.intervene_text
+    ?? result?.last_error?.message
+    ?? result?.message
+    ?? result?.msg
+    ?? result?.last_error
+    ?? status
+  return sanitizeGLMUpstreamMessage(detail)
+}
+
+function mergeGLMResponseParts(current: any[], incoming: unknown): any[] {
+  if (!Array.isArray(incoming)) return current
+  return incoming.reduce((parts: any[], part: any) => {
+    const index = parts.findIndex((existing) => existing.logic_id === part.logic_id)
+    return index === -1
+      ? [...parts, part]
+      : parts.map((existing, existingIndex) => existingIndex === index ? part : existing)
+  }, current)
+}
+
+export function addGLMTransportNonce(
+  messages: Array<{ role: string; content: any[] }>,
+  requestId: string,
+): Array<{ role: string; content: any[] }> {
+  const marker = `<!-- chat2api transport request ${requestId}; no semantic meaning; do not repeat -->\n`
+  let markerAdded = false
+
+  return messages.map((message) => ({
+    ...message,
+    content: message.content.map((part: any) => {
+      if (markerAdded || part?.type !== 'text' || typeof part.text !== 'string') return part
+      markerAdded = true
+      return { ...part, text: marker + part.text }
+    }),
+  }))
+}
+
+export function applyGLMGenerationControls<T extends Record<string, unknown>>(
+  payload: T,
+  temperature?: number,
+): T & { temperature?: number; do_sample?: boolean } {
+  if (temperature === undefined) return { ...payload }
+  if (!Number.isFinite(temperature) || temperature < 0 || temperature > 1) {
+    throw new GLMRequestValidationError('GLM temperature must be a finite number between 0 and 1')
+  }
+
+  return {
+    ...payload,
+    temperature,
+    ...(temperature === 0 ? { do_sample: false } : {}),
+  }
 }
 
 function md5(str: string): string {
@@ -120,7 +221,8 @@ export class GLMAdapter {
     return credentials.refresh_token || credentials.token || ''
   }
 
-  private async acquireToken(): Promise<string> {
+  private async acquireToken(options?: GLMRequestOptions): Promise<string> {
+    throwIfAborted(options?.signal)
     const refreshToken = this.getRefreshToken()
     const cached = tokenCache.get(refreshToken)
     if (cached && Date.now() < cached.expiresAt) {
@@ -142,12 +244,13 @@ export class GLMAdapter {
           'X-Sign': sign.sign,
           'X-Timestamp': sign.timestamp,
         },
-        timeout: 15000,
+        timeout: getGLMRequestTimeout(15000, options),
+        signal: options?.signal,
         validateStatus: () => true,
       }
     )
 
-    console.log('[GLM] Token response:', JSON.stringify(response.data, null, 2))
+    console.log('[GLM] Token refresh response status:', response.status)
     const { code, status, message } = response.data || {}
     const isSuccess = code === 0 || status === 0
     if (response.status !== 200 || !isSuccess) {
@@ -202,7 +305,11 @@ export class GLMAdapter {
   /**
    * Upload file to GLM
    */
-  private async uploadFile(fileUrl: string): Promise<{ source_id: string; file_url?: string }> {
+  private async uploadFile(
+    fileUrl: string,
+    options?: GLMRequestOptions,
+  ): Promise<{ source_id: string; file_url?: string }> {
+    throwIfAborted(options?.signal)
     console.log('[GLM] Uploading file:', fileUrl.substring(0, 50) + '...')
     
     let filename: string
@@ -219,7 +326,8 @@ export class GLMAdapter {
       const response = await axios.get(fileUrl, {
         responseType: 'arraybuffer',
         maxContentLength: FILE_MAX_SIZE,
-        timeout: 60000,
+        timeout: getGLMRequestTimeout(60000, options),
+        signal: options?.signal,
       })
       fileData = Buffer.from(response.data)
       mimeType = response.headers['content-type'] || mime.lookup(filename) || 'application/octet-stream'
@@ -231,7 +339,7 @@ export class GLMAdapter {
       contentType: mimeType,
     })
 
-    const token = await this.acquireToken()
+    const token = await this.acquireToken(options)
     const response = await axios.post(
       `${GLM_API_BASE}/backend-api/assistant/file_upload`,
       formData,
@@ -243,7 +351,8 @@ export class GLMAdapter {
           ...formData.getHeaders(),
         },
         maxBodyLength: FILE_MAX_SIZE,
-        timeout: 60000,
+        timeout: getGLMRequestTimeout(60000, options),
+        signal: options?.signal,
         validateStatus: () => true,
       }
     )
@@ -418,8 +527,12 @@ export class GLMAdapter {
     return [{ role: 'user', content }]
   }
 
-  async chatCompletion(request: ChatCompletionRequest): Promise<{ response: AxiosResponse; conversationId: string }> {
-    const token = await this.acquireToken()
+  async chatCompletion(
+    request: ChatCompletionRequest,
+    options?: GLMRequestOptions,
+  ): Promise<{ response: AxiosResponse; conversationId: string }> {
+    throwIfAborted(options?.signal)
+    const token = await this.acquireToken(options)
     const sign = generateSign()
 
     // Clone messages to avoid modifying original request
@@ -462,12 +575,13 @@ GLM STRICT RULES:
     // Upload files
     for (const fileUrl of fileUrls) {
       try {
-        const result = await this.uploadFile(fileUrl)
+        const result = await this.uploadFile(fileUrl, options)
         refs.push({
           source_id: result.source_id,
           file_url: result.file_url || fileUrl,
         })
       } catch (error) {
+        if (options?.signal?.aborted) throw getAbortReason(options.signal)
         console.error('[GLM] Failed to upload file:', error)
       }
     }
@@ -475,7 +589,7 @@ GLM STRICT RULES:
     // Upload images
     for (const imageUrl of imageUrls) {
       try {
-        const result = await this.uploadFile(imageUrl)
+        const result = await this.uploadFile(imageUrl, options)
         refs.push({
           source_id: result.source_id,
           image_url: result.file_url || imageUrl,
@@ -483,11 +597,18 @@ GLM STRICT RULES:
           height: 0,
         })
       } catch (error) {
+        if (options?.signal?.aborted) throw getAbortReason(options.signal)
         console.error('[GLM] Failed to upload image:', error)
       }
     }
 
-    const preparedMessages = this.messagesToPrompt(messages, refs, toolsPrompt, false)
+    throwIfAborted(options?.signal)
+
+    const transportRequestId = uuid()
+    const preparedMessages = addGLMTransportNonce(
+      this.messagesToPrompt(messages, refs, toolsPrompt, false),
+      transportRequestId,
+    )
 
     let assistantId = DEFAULT_ASSISTANT_ID
     let reasoningEffort = request.reasoningEffort
@@ -532,7 +653,7 @@ GLM STRICT RULES:
     
     const response = await axios.post(
       `${GLM_API_BASE}/backend-api/assistant/stream`,
-      {
+      applyGLMGenerationControls({
         assistant_id: assistantId,
         conversation_id: '',
         project_id: '',
@@ -547,22 +668,24 @@ GLM STRICT RULES:
           is_test: false,
           platform: 'pc',
           quote_log_id: '',
+          request_id: transportRequestId,
           cogview: {
             rm_label_watermark: false,
           },
         },
-      },
+      }, request.temperature),
       {
         headers: {
           Authorization: `Bearer ${token}`,
           ...FAKE_HEADERS,
           'X-Device-Id': uuid(),
-          'X-Request-Id': uuid(),
+          'X-Request-Id': transportRequestId,
           'X-Sign': sign.sign,
           'X-Timestamp': sign.timestamp,
           'X-Nonce': sign.nonce,
         },
-        timeout: 120000,
+        timeout: getGLMRequestTimeout(120000, options),
+        signal: options?.signal,
         validateStatus: () => true,
         responseType: 'stream',
       }
@@ -723,10 +846,19 @@ export class GLMStreamHandler {
 
   async handleStream(stream: any): Promise<PassThrough> {
     const transStream = new PassThrough()
-    const cachedParts: any[] = []
+    let responseParts: any[] = []
     let sentContent = ''
     let sentReasoning = ''
     let sentRole = false
+    let completed = false
+
+    const failStream = (error: Error): void => {
+      if (completed) return
+      completed = true
+      console.error('[GLM] Upstream stream failed:', error.message)
+      transStream.destroy(error)
+      this.onEnd?.()
+    }
 
     transStream.write(
       `data: ${JSON.stringify({
@@ -743,24 +875,24 @@ export class GLMStreamHandler {
         try {
           const result = JSON.parse(event.data)
 
+          if (completed) return
+
+          const upstreamFailure = getGLMUpstreamFailure(result)
+          if (upstreamFailure) {
+            failStream(new GLMUpstreamResponseError(`GLM upstream rejected the response: ${upstreamFailure}`))
+            return
+          }
+
           if (!this.conversationId && result.conversation_id) {
             this.conversationId = result.conversation_id
           }
 
-          if (result.status !== 'finish' && result.status !== 'intervene') {
-            if (result.parts) {
-              result.parts.forEach((part: any) => {
-                const index = cachedParts.findIndex((p) => p.logic_id === part.logic_id)
-                if (index !== -1) {
-                  cachedParts[index] = part
-                } else {
-                  cachedParts.push(part)
-                }
-              })
-            }
+          responseParts = mergeGLMResponseParts(responseParts, result.parts)
+
+          if (result.status !== 'finish') {
 
             const searchMap = new Map<string, any>()
-            cachedParts.forEach((part) => {
+            responseParts.forEach((part) => {
               if (!part.content || !Array.isArray(part.content)) return
               const { meta_data } = part
               part.content.forEach((item: any) => {
@@ -779,7 +911,7 @@ export class GLMStreamHandler {
             let fullText = ''
             let fullReasoning = ''
 
-            cachedParts.forEach((part) => {
+            responseParts.forEach((part) => {
               const { content, meta_data } = part
               if (!Array.isArray(content)) return
 
@@ -855,6 +987,7 @@ export class GLMStreamHandler {
 
             if (outputChunks.length > 0) sentRole = true
           } else {
+            completed = true
             // Flush any remaining tool call buffer before finishing
             const baseChunk = createBaseChunk(this.conversationId, this.model, this.created)
             const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
@@ -873,14 +1006,10 @@ export class GLMStreamHandler {
                 choices: [
                   {
                     index: 0,
-                    delta:
-                      result.status === 'intervene' && result.last_error?.intervene_text
-                        ? { content: '\n\n' + result.last_error.intervene_text }
-                        : {},
+                    delta: {},
                     finish_reason: finishReason,
                   },
                 ],
-                usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
                 created: this.created,
               })}\n\n`
             )
@@ -888,7 +1017,7 @@ export class GLMStreamHandler {
             this.onEnd?.()
           }
         } catch (err) {
-          console.error('[GLM] Stream parse error:', err)
+          failStream(err instanceof Error ? err : new Error(String(err)))
         }
       },
     })
@@ -896,86 +1025,81 @@ export class GLMStreamHandler {
     const decoder = new TextDecoder('utf-8')
     stream.on('data', (buffer: Buffer) => parser.feed(decoder.decode(buffer, { stream: true })))
 
-    // Handle stream errors - ensure proper cleanup
     stream.once('error', (err: Error) => {
-      console.error('[GLM] Stream error:', err.message)
-      // Flush any remaining tool call buffer
-      const baseChunk = createBaseChunk(this.conversationId, this.model, this.created)
-      const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
-      for (const outChunk of flushChunks) {
-        transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
-      }
-      const finishReason = this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop'
-      transStream.write(
-        `data: ${JSON.stringify({
-          id: this.conversationId,
-          model: this.model,
-          object: 'chat.completion.chunk',
-          choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
-          created: this.created,
-        })}\n\n`
-      )
-      transStream.end('data: [DONE]\n\n')
-      this.onEnd?.()
+      failStream(new GLMUpstreamResponseError(`GLM upstream stream error: ${sanitizeGLMUpstreamMessage(err.message)}`))
     })
 
-    // Handle stream close - ensure proper cleanup if not already finished
-    stream.once('close', () => {
-      console.log('[GLM] Stream closed')
-      // Only send finish if we haven't already
-      if (!transStream.closed) {
-        const baseChunk = createBaseChunk(this.conversationId, this.model, this.created)
-        const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
-        for (const outChunk of flushChunks) {
-          transStream.write(`data: ${JSON.stringify(outChunk)}\n\n`)
-        }
-        const finishReason = this.toolStreamParser?.hasEmittedToolCall() ? 'tool_calls' : 'stop'
-        transStream.write(
-          `data: ${JSON.stringify({
-            id: this.conversationId,
-            model: this.model,
-            object: 'chat.completion.chunk',
-            choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
-            created: this.created,
-          })}\n\n`
-        )
-        transStream.end('data: [DONE]\n\n')
-        this.onEnd?.()
-      }
-    })
+    const failIncompleteStream = (): void => failStream(
+      new GLMUpstreamResponseError('GLM upstream response ended before a finish event'),
+    )
+    stream.once('end', failIncompleteStream)
+    stream.once('close', failIncompleteStream)
 
     return transStream
   }
 
-  async handleNonStream(stream: any): Promise<any> {
+  async handleNonStream(stream: any, options?: GLMRequestOptions): Promise<any> {
     return new Promise((resolve, reject) => {
-      const cachedParts: any[] = []
+      let responseParts: any[] = []
+      let settled = false
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined
+
+      const onData = (buffer: Buffer): void => parser.feed(buffer.toString())
+      const onError = (error: Error): void => failResponse(
+        new GLMUpstreamResponseError(`GLM upstream stream error: ${sanitizeGLMUpstreamMessage(error.message)}`),
+      )
+      const onTransportEnd = (): void => failResponse(
+        new GLMUpstreamResponseError('GLM upstream response ended before a finish event'),
+      )
+      const onAbort = (): void => {
+        if (options?.signal) failResponse(getAbortReason(options.signal))
+      }
+
+      const cleanup = (): void => {
+        if (timeoutHandle) clearTimeout(timeoutHandle)
+        options?.signal?.removeEventListener('abort', onAbort)
+        stream.off?.('data', onData)
+        stream.off?.('error', onError)
+        stream.off?.('end', onTransportEnd)
+        stream.off?.('close', onTransportEnd)
+      }
+
+      const destroyUpstream = (): void => {
+        if (typeof stream.destroy === 'function' && !stream.destroyed) stream.destroy()
+      }
+
+      const failResponse = (error: Error): void => {
+        if (settled) return
+        settled = true
+        cleanup()
+        destroyUpstream()
+        reject(error)
+      }
 
       const parser = createParser({
         onEvent: (event: any) => {
           try {
             const result = JSON.parse(event.data)
 
+            if (settled) return
+
+            const upstreamFailure = getGLMUpstreamFailure(result)
+            if (upstreamFailure) {
+              failResponse(new GLMUpstreamResponseError(`GLM upstream rejected the response: ${upstreamFailure}`))
+              return
+            }
+
             if (!this.conversationId && result.conversation_id) {
               this.conversationId = result.conversation_id
             }
 
+            responseParts = mergeGLMResponseParts(responseParts, result.parts)
+
             if (result.status !== 'finish') {
-              if (result.parts) {
-                // Accumulate parts (same as handleStream), don't replace
-                // GLM sends incremental parts, each event only contains new content
-                result.parts.forEach((part: any) => {
-                  const index = cachedParts.findIndex((p) => p.logic_id === part.logic_id)
-                  if (index !== -1) {
-                    cachedParts[index] = part
-                  } else {
-                    cachedParts.push(part)
-                  }
-                })
-              }
+              return
             } else {
               const searchMap = new Map<string, any>()
-              cachedParts.forEach((part) => {
+              responseParts.forEach((part) => {
                 if (!part.content || !Array.isArray(part.content)) return
                 const { meta_data } = part
                 part.content.forEach((item: any) => {
@@ -994,7 +1118,7 @@ export class GLMStreamHandler {
               let fullText = ''
               let fullReasoning = ''
 
-              cachedParts.forEach((part) => {
+              responseParts.forEach((part) => {
                 const { content, meta_data } = part
                 if (!Array.isArray(content)) return
 
@@ -1040,6 +1164,9 @@ export class GLMStreamHandler {
                 ? { content: fullText, toolCalls: [] }
                 : parseToolCallsFromText(fullText, 'glm')
 
+              settled = true
+              cleanup()
+              destroyUpstream()
               resolve({
                 id: this.conversationId,
                 model: this.model,
@@ -1056,34 +1183,37 @@ export class GLMStreamHandler {
                     finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
                   },
                 ],
-                usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
                 created: Math.floor(Date.now() / 1000),
               })
             }
           } catch (err) {
-            reject(err)
+            failResponse(err instanceof Error ? err : new Error(String(err)))
           }
         },
       })
 
-      stream.on('data', (buffer: Buffer) => parser.feed(buffer.toString()))
-      stream.once('error', reject)
-      stream.once('close', () => {
-        resolve({
-          id: this.conversationId,
-          model: this.model,
-          object: 'chat.completion',
-          choices: [
-            {
-              index: 0,
-              message: { role: 'assistant', content: '', reasoning_content: null },
-              finish_reason: 'stop',
-            },
-          ],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          created: Math.floor(Date.now() / 1000),
-        })
-      })
+      if (options?.signal?.aborted) {
+        onAbort()
+        return
+      }
+
+      options?.signal?.addEventListener('abort', onAbort, { once: true })
+      stream.once('error', onError)
+      stream.once('end', onTransportEnd)
+      stream.once('close', onTransportEnd)
+
+      const timeoutMs = getGLMRequestTimeout(120000, options)
+      timeoutHandle = setTimeout(() => failResponse(
+        new RequestTimeoutError(
+          options?.requestId ?? 'unknown',
+          timeoutMs,
+          'GLM upstream response',
+        ),
+      ), timeoutMs)
+
+      // Registering a data listener may synchronously start a custom Readable,
+      // so install every settle/cleanup path before consumption begins.
+      stream.on('data', onData)
     })
   }
 

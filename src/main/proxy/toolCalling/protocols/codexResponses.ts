@@ -26,10 +26,11 @@ When Codex Responses compatibility is enabled, emit response items with type "fu
 
   parse(content, context) {
     const parseable = stripFencedCodeBlocks(content).trim()
+    const hasMarker = /"type"\s*:\s*"function_call"/.test(parseable)
     const allowedNames = toolNames(context.tools)
     const rawMatches: string[] = []
     const invalidToolNames: string[] = []
-    const toolCalls = []
+    const toolCalls: ReturnType<typeof buildToolCall>[] = []
 
     let parsed: unknown
     try {
@@ -38,9 +39,9 @@ When Codex Responses compatibility is enabled, emit response items with type "fu
       return createParseResult({
         content,
         toolCalls,
-        protocol: 'unknown',
+        protocol: hasMarker ? 'codex_responses' : 'unknown',
         rawMatches,
-        malformedReason: 'codex_responses_json_parse_failed',
+        malformedReason: hasMarker ? 'codex_responses_json_parse_failed' : undefined,
       })
     }
 
@@ -56,7 +57,7 @@ When Codex Responses compatibility is enabled, emit response items with type "fu
         continue
       }
 
-      const id =
+      const id: string =
         typeof record.call_id === 'string'
           ? record.call_id
           : typeof record.id === 'string'

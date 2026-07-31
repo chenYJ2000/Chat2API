@@ -8,16 +8,53 @@ import {
   type ToolCallingConfig,
 } from '../../../shared/toolCalling.ts'
 import { getToolProtocol } from './protocols/index.ts'
+import { hasFencedCodeBlock } from './protocols/shared.ts'
+import { parseToolCallContent } from './responseParser.ts'
 import { getToolClientAdapter } from './clientAdapters/index.ts'
 import { buildToolCallingRuntimePlan } from './runtimePlan.ts'
-import type { NormalizedToolDefinition, ToolCallingPlan, ToolCallingTransformResult, ToolProtocolId } from './types.ts'
+import type {
+  JsonRuntimeType,
+  NormalizedToolDefinition,
+  ToolArgumentValidationIssue,
+  ToolCallingPlan,
+  ToolCallingTransformResult,
+  ToolProtocolId,
+} from './types.ts'
 
 export class ToolCallingResponseError extends Error {
   readonly status = 502
+  readonly code: 'missing_required_call' | 'invalid_arguments'
+  readonly diagnostics?: ToolCallingPlan['diagnostics']
+  readonly validationErrors: string[]
+  readonly validationIssues: ToolArgumentValidationIssue[]
+  readonly toolName?: string
+  readonly repairable: boolean
+  /** Rejected arguments are private repair context and must never enter diagnostics/logs. */
+  readonly rejectedArguments?: string
+  /** Original upstream reasoning, retained only for the bounded repair response. */
+  readonly reasoningContent?: string
 
-  constructor(message: string) {
+  constructor(
+    message: string,
+    code: 'missing_required_call' | 'invalid_arguments' = 'invalid_arguments',
+    diagnostics?: ToolCallingPlan['diagnostics'],
+    validationErrors: string[] = [],
+    toolName?: string,
+    repairable: boolean = code === 'invalid_arguments',
+    reasoningContent?: string,
+    validationIssues: ToolArgumentValidationIssue[] = [],
+    rejectedArguments?: string,
+  ) {
     super(message)
     this.name = 'ToolCallingResponseError'
+    this.code = code
+    this.diagnostics = diagnostics
+    this.validationErrors = [...validationErrors]
+    this.validationIssues = validationIssues.map((issue) => ({ ...issue }))
+    this.toolName = toolName
+    this.repairable = repairable
+    this.rejectedArguments = rejectedArguments
+    this.reasoningContent = reasoningContent
   }
 }
 
@@ -39,7 +76,7 @@ export function isToolCallingResponseErrorMessage(message?: string): boolean {
 
 const MAX_SCHEMA_CACHE_ENTRIES = 256
 const MAX_SCHEMA_CHARS = 100_000
-const MANAGED_PROTOCOL_MARKER = /<\/?\|CHAT2API\||<\/?tool_(?:calls|use)>|\[\/?function_calls\]|\[call:[^\]]+\]|\[\/call\]/i
+const MANAGED_PROTOCOL_MARKER = /<\/?\|CHAT2API\||<\/?(?:tool_calls|tool_use|invoke|parameter|parameters|arguments|antml:function_calls|antml:invoke|antml:parameters)\b|\[\/?function_calls\]|\[call:[^\]]+\]|\[\/call\]/i
 const schemaValidator = new Ajv({
   allErrors: true,
   coerceTypes: false,
@@ -105,40 +142,122 @@ export class ToolCallingEngine {
     if (!plan.shouldParseResponse) return
 
     const message = result?.choices?.[0]?.message
-    if (!message || typeof message.content !== 'string') {
-      if (message?.tool_calls?.length) {
-        message.tool_calls = validateAndSanitizeToolCalls(message.tool_calls, plan)
+    const rawContent = typeof message?.content === 'string' ? message.content : ''
+    const rawResponsePreview = sanitizeDiagnosticPreview(
+      rawContent || JSON.stringify({
+        content: message?.content ?? null,
+        tool_calls: Array.isArray(message?.tool_calls) ? message.tool_calls : [],
+      }),
+    )
+
+    try {
+      if (!message) {
+        this.assertRequiredToolCall(plan)
         return
       }
-      this.assertRequiredToolCall(plan)
-      return
+
+      // Some upstreams unexpectedly return genuine OpenAI tool_calls even
+      // though the request was prompt-emulated. Prefer and validate them no
+      // matter whether a text/reasoning field is also present.
+      if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+        message.tool_calls = validateAndSanitizeToolCalls(message.tool_calls, plan)
+        result.choices[0].finish_reason = 'tool_calls'
+        return
+      }
+
+      if (typeof message.content !== 'string') {
+        this.assertRequiredToolCall(plan)
+        return
+      }
+
+      const parseResult = parseSelectedProtocol(message.content, plan)
+      plan.diagnostics = {
+        ...plan.diagnostics,
+        parserFormat: parseResult.protocol,
+        detectedProtocols: parseResult.detectedProtocols,
+        parsedToolCallCount: parseResult.toolCalls.length,
+        invalidToolNames: [...parseResult.invalidToolNames],
+        malformedToolNames: [...(parseResult.malformedToolNames ?? [])],
+        malformedReason: parseResult.malformedReason,
+        fencedBlockDetected: hasFencedCodeBlock(message.content),
+        rawContentPreview: rawResponsePreview,
+        ...(this.config.diagnosticsEnabled ? {
+          rawMatchPreviews: parseResult.rawMatches.map((raw) => sanitizeDiagnosticPreview(raw, 800)),
+          parsedArgumentsPreview: parseResult.toolCalls.map((call) => ({
+            name: sanitizeToolName(call.function.name),
+            arguments: sanitizeDiagnosticPreview(call.function.arguments, 1200),
+          })),
+        } : {}),
+      }
+
+      if (parseResult.toolCalls.length === 0) {
+        this.assertRequiredToolCall(
+          plan,
+          parseResult.invalidToolNames,
+          parseResult.malformedReason,
+          parseResult.malformedToolNames,
+        )
+        return
+      }
+
+      const toolCalls = validateAndSanitizeToolCalls(parseResult.toolCalls, plan)
+      message.content = parseResult.content || null
+      message.tool_calls = toolCalls
+      result.choices[0].finish_reason = 'tool_calls'
+    } catch (error) {
+      if (!(error instanceof ToolCallingResponseError)) throw error
+
+      const diagnostics = {
+        ...plan.diagnostics,
+        ...(error.validationErrors.length > 0
+          ? { schemaValidationErrors: [...error.validationErrors] }
+          : {}),
+        ...(error.validationIssues.length > 0
+          ? { schemaValidationIssues: error.validationIssues.map((issue) => ({ ...issue })) }
+          : {}),
+        ...(error.message.includes('internal protocol markers')
+          ? { wrapperLeakDetected: true }
+          : {}),
+        rawContentPreview: rawResponsePreview,
+      }
+      plan.diagnostics = diagnostics
+      const reasoningContent = typeof message?.reasoning_content === 'string'
+        && message.reasoning_content.trim()
+        ? message.reasoning_content
+        : error.reasoningContent
+      throw new ToolCallingResponseError(
+        error.message,
+        error.code,
+        diagnostics,
+        error.validationErrors,
+        error.toolName,
+        error.repairable,
+        reasoningContent,
+        error.validationIssues,
+        error.rejectedArguments,
+      )
     }
-
-    const parseResult = parseSelectedProtocol(message.content, plan)
-    plan.diagnostics.parserFormat = parseResult.protocol
-    plan.diagnostics.parsedToolCallCount = parseResult.toolCalls.length
-    plan.diagnostics.invalidToolNames = parseResult.invalidToolNames
-    plan.diagnostics.malformedReason = parseResult.malformedReason
-
-    if (parseResult.toolCalls.length === 0) {
-      this.assertRequiredToolCall(plan, parseResult.invalidToolNames, parseResult.malformedReason)
-      return
-    }
-
-    const toolCalls = validateAndSanitizeToolCalls(parseResult.toolCalls, plan)
-    message.content = parseResult.content || null
-    message.tool_calls = toolCalls
-
-    const choice = result.choices[0]
-    choice.finish_reason = 'tool_calls'
   }
 
   private assertRequiredToolCall(
     plan: ToolCallingPlan,
     invalidToolNames: string[] = [],
     malformedReason?: string,
+    malformedToolNames: string[] = [],
   ): void {
     if (plan.toolChoiceMode !== 'required' && plan.toolChoiceMode !== 'forced') return
+
+    if (malformedToolNames.length > 0) {
+      const toolName = malformedToolNames[0]
+      throw new ToolCallingResponseError(
+        `Upstream model returned invalid tool arguments for "${sanitizeToolName(toolName)}": ${malformedReason || 'arguments could not be parsed'}`,
+        'invalid_arguments',
+        undefined,
+        malformedReason ? [malformedReason] : [],
+        toolName,
+        true,
+      )
+    }
 
     const details = [
       invalidToolNames.length > 0 ? `invalid tools: ${invalidToolNames.join(', ')}` : undefined,
@@ -147,11 +266,12 @@ export class ToolCallingEngine {
     const suffix = details ? ` (${details})` : ''
     throw new ToolCallingResponseError(
       `Upstream model did not return the required tool call${suffix}`,
+      'missing_required_call',
     )
   }
 }
 
-function validateAndSanitizeToolCalls(
+export function validateAndSanitizeToolCalls(
   toolCalls: ToolCall[],
   plan: ToolCallingPlan,
 ): ToolCall[] {
@@ -162,31 +282,61 @@ function validateAndSanitizeToolCalls(
     const toolName = publicToolCall.function?.name
     const definition = definitions.get(toolName)
     if (!definition) {
-      throwInvalidToolArguments(toolName || 'unknown', 'tool is not allowed by this request')
+      throwInvalidToolArguments(toolName || 'unknown', 'tool is not allowed by this request', false)
     }
 
     const rawArguments = publicToolCall.function?.arguments
     if (typeof rawArguments !== 'string') {
-      throwInvalidToolArguments(toolName, 'arguments must be a JSON string')
+      throwInvalidToolArguments(
+        toolName,
+        'arguments must be a JSON string',
+        true,
+        [createValidationIssue('', 'type', 'must be a JSON string', 'JSON string', rawArguments)],
+      )
     }
     if (MANAGED_PROTOCOL_MARKER.test(rawArguments)) {
-      throwInvalidToolArguments(toolName, 'arguments contain internal protocol markers')
+      throwInvalidToolArguments(
+        toolName,
+        'arguments contain internal protocol markers',
+        true,
+        [],
+        rawArguments,
+      )
     }
 
     let argumentsValue: unknown
     try {
       argumentsValue = JSON.parse(rawArguments)
     } catch {
-      throwInvalidToolArguments(toolName, 'arguments are not valid JSON')
+      throwInvalidToolArguments(
+        toolName,
+        'arguments are not valid JSON',
+        true,
+        [createValidationIssue('', 'parse', 'must be valid JSON', 'valid JSON object', rawArguments)],
+        rawArguments,
+      )
     }
 
     if (!isPlainObject(argumentsValue)) {
-      throwInvalidToolArguments(toolName, 'arguments must decode to a JSON object')
+      throwInvalidToolArguments(
+        toolName,
+        'arguments must decode to a JSON object',
+        true,
+        [createValidationIssue('', 'type', 'must be object', 'object', argumentsValue)],
+        rawArguments,
+      )
     }
 
     const validate = getToolArgumentValidator(definition)
     if (!validate(argumentsValue)) {
-      throwInvalidToolArguments(toolName, formatSchemaErrors(validate.errors))
+      const validationIssues = buildSchemaValidationIssues(validate.errors, argumentsValue)
+      throwInvalidToolArguments(
+        toolName,
+        formatSchemaErrors(validationIssues),
+        true,
+        validationIssues,
+        rawArguments,
+      )
     }
 
     return publicToolCall
@@ -239,21 +389,130 @@ function getToolArgumentValidator(tool: NormalizedToolDefinition): ValidateFunct
   return compiled
 }
 
-function formatSchemaErrors(errors: ErrorObject[] | null | undefined): string {
-  if (!errors?.length) return 'arguments do not match the declared JSON Schema'
+function buildSchemaValidationIssues(
+  errors: ErrorObject[] | null | undefined,
+  argumentsValue: Record<string, unknown>,
+): ToolArgumentValidationIssue[] {
+  return (errors ?? []).slice(0, 6).map((error) => {
+    const params = error.params as Record<string, unknown>
+    const relatedProperty = error.keyword === 'required'
+      ? String(params.missingProperty ?? '')
+      : error.keyword === 'additionalProperties'
+        ? String(params.additionalProperty ?? '')
+        : ''
+    const jsonPointer = relatedProperty
+      ? appendJsonPointer(error.instancePath, relatedProperty)
+      : error.instancePath
+    const actualValue = error.keyword === 'required'
+      ? MISSING_JSON_VALUE
+      : getJsonPointerValue(argumentsValue, jsonPointer)
 
-  return errors.slice(0, 6).map((error) => {
-    const missingProperty = error.keyword === 'required'
-      ? String(error.params.missingProperty || '')
-      : ''
-    const path = `${error.instancePath || '$'}${missingProperty ? `/${missingProperty}` : ''}`
-    return `${path} ${error.message || error.keyword}`
+    return {
+      jsonPointer,
+      keyword: error.keyword,
+      message: error.message || error.keyword,
+      expected: getExpectedDescription(error),
+      actualType: getJsonRuntimeType(actualValue),
+    }
+  })
+}
+
+function formatSchemaErrors(issues: ToolArgumentValidationIssue[]): string {
+  if (issues.length === 0) return 'arguments do not match the declared JSON Schema'
+
+  return issues.map((issue) => {
+    const pointer = issue.jsonPointer || '(document root)'
+    return `${pointer} ${issue.message} (expected ${issue.expected}, actual ${issue.actualType})`
   }).join('; ')
 }
 
-function throwInvalidToolArguments(toolName: string, reason: string): never {
+function createValidationIssue(
+  jsonPointer: string,
+  keyword: string,
+  message: string,
+  expected: string,
+  actualValue: unknown,
+): ToolArgumentValidationIssue {
+  return {
+    jsonPointer,
+    keyword,
+    message,
+    expected,
+    actualType: getJsonRuntimeType(actualValue),
+  }
+}
+
+const MISSING_JSON_VALUE = Symbol('missing-json-value')
+
+function appendJsonPointer(base: string, property: string): string {
+  const escaped = property.replace(/~/g, '~0').replace(/\//g, '~1')
+  return `${base}/${escaped}`
+}
+
+function getJsonPointerValue(root: unknown, pointer: string): unknown | typeof MISSING_JSON_VALUE {
+  if (!pointer) return root
+  if (!pointer.startsWith('/')) return MISSING_JSON_VALUE
+
+  let current: unknown = root
+  for (const encodedToken of pointer.slice(1).split('/')) {
+    const token = encodedToken.replace(/~1/g, '/').replace(/~0/g, '~')
+    if (
+      (typeof current !== 'object' || current === null)
+      || !Object.prototype.hasOwnProperty.call(current, token)
+    ) return MISSING_JSON_VALUE
+    current = (current as Record<string, unknown>)[token]
+  }
+  return current
+}
+
+function getExpectedDescription(error: ErrorObject): string {
+  const params = error.params as Record<string, unknown>
+  switch (error.keyword) {
+    case 'type':
+      return String(params.type ?? 'declared JSON type')
+    case 'required':
+      return 'present property'
+    case 'additionalProperties':
+      return 'property to be absent'
+    case 'enum':
+      return 'one of the declared enum values'
+    case 'const':
+      return 'the declared constant value'
+    case 'format':
+      return `format ${String(params.format ?? 'declared by schema')}`
+    default:
+      return error.message || error.keyword
+  }
+}
+
+function getJsonRuntimeType(value: unknown | typeof MISSING_JSON_VALUE): JsonRuntimeType {
+  if (value === MISSING_JSON_VALUE || value === undefined) return 'missing'
+  if (value === null) return 'null'
+  if (Array.isArray(value)) return 'array'
+  if (typeof value === 'object') return 'object'
+  if (typeof value === 'string') return 'string'
+  if (typeof value === 'number') return 'number'
+  if (typeof value === 'boolean') return 'boolean'
+  return 'unknown'
+}
+
+function throwInvalidToolArguments(
+  toolName: string,
+  reason: string,
+  repairable: boolean = true,
+  validationIssues: ToolArgumentValidationIssue[] = [],
+  rejectedArguments?: string,
+): never {
   throw new ToolCallingResponseError(
     `Upstream model returned invalid tool arguments for "${sanitizeToolName(toolName)}": ${reason}`,
+    'invalid_arguments',
+    undefined,
+    [reason],
+    toolName,
+    repairable,
+    undefined,
+    validationIssues,
+    rejectedArguments,
   )
 }
 
@@ -304,6 +563,20 @@ function injectPrompt(messages: ChatMessage[], prompt: string): ChatMessage[] {
 }
 
 function parseSelectedProtocol(content: string, plan: ToolCallingPlan) {
-  const selected = getToolProtocol(plan.protocol)
-  return selected.parse(content, { tools: plan.tools, protocol: plan.protocol })
+  return parseToolCallContent(content, plan)
+}
+
+function sanitizeDiagnosticPreview(value: string, maxChars: number = 2400): string {
+  const redacted = value
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, 'Bearer [REDACTED]')
+    .replace(/\bsk-[A-Za-z0-9_-]{10,}\b/g, '[REDACTED]')
+    .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, '[REDACTED]')
+    .replace(
+      /("?(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|set-cookie|password|session[_-]?token|token)"?\s*[:=]\s*)"?[^",}\]\s]+"?/gi,
+      '$1"[REDACTED]"',
+    )
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
+  return redacted.length <= maxChars
+    ? redacted
+    : `${redacted.slice(0, maxChars)}...[truncated ${redacted.length - maxChars} chars]`
 }

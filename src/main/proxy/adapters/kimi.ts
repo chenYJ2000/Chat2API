@@ -141,7 +141,7 @@ export class KimiAdapter {
         userId,
         refreshTime: unixTimestamp() + 300,
       })
-      console.log('[Kimi] Using JWT token, userId:', userId)
+      console.log('[Kimi] Using JWT token with parsed user ID')
       return { accessToken: this.token, userId }
     }
 
@@ -505,6 +505,42 @@ export class KimiAdapter {
 
 const STAGE_NAME_THINKING = 'STAGE_NAME_THINKING'
 
+class KimiApiError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'KimiApiError'
+    this.status = status
+  }
+}
+
+function createKimiApiError(value: unknown): KimiApiError {
+  if (typeof value === 'string') {
+    const normalized = value.toLowerCase()
+    const status = normalized.includes('invalid') && normalized.includes('token') ? 401 : 502
+    return new KimiApiError(`Kimi API Error: ${value}`, status)
+  }
+
+  const error = value && typeof value === 'object'
+    ? value as Record<string, any>
+    : {}
+  const code = typeof error.code === 'string' ? error.code : 'upstream_error'
+  const details = Array.isArray(error.details) ? error.details : []
+  const localizedMessage = details.find((detail: any) =>
+    typeof detail?.debug?.localizedMessage?.message === 'string'
+  )?.debug?.localizedMessage?.message
+  const status = code === 'resource_exhausted'
+    ? 429
+    : code === 'unauthenticated'
+      ? 401
+      : code === 'permission_denied'
+        ? 403
+        : 502
+  const message = localizedMessage || `Kimi upstream error: ${code}`
+  return new KimiApiError(message, status)
+}
+
 export class KimiStreamHandler {
   private model: string
   private conversationId: string
@@ -634,13 +670,14 @@ export class KimiStreamHandler {
           
           // Check for error response
           if (data.error) {
-            console.error('[Kimi] API Error:', data.error)
+            const apiError = createKimiApiError(data.error)
+            console.error('[Kimi] API Error:', apiError.message)
             this.hasError = true
             transStream.write(`data: ${JSON.stringify({
               id: this.conversationId,
               model: this.model,
               object: 'chat.completion.chunk',
-              choices: [{ index: 0, delta: { content: `Error: ${data.error.message || JSON.stringify(data.error)}` }, finish_reason: null }],
+              choices: [{ index: 0, delta: { content: apiError.message }, finish_reason: null }],
               created,
             })}\n\n`)
             transStream.write(`data: ${JSON.stringify({
@@ -768,7 +805,7 @@ export class KimiStreamHandler {
       }
     }
 
-    if (data.done !== undefined) {
+    if (data.done === true) {
       const chatId = this.getConversationId() || this.conversationId
       const baseChunk = createBaseChunk(chatId, this.model, created)
       const flushChunks = this.toolStreamParser?.flush(baseChunk) ?? []
@@ -837,7 +874,7 @@ export class KimiStreamHandler {
               const data = JSON.parse(text)
 
               if (data.error) {
-                reject(new Error(`Kimi API Error: ${data.error.message || JSON.stringify(data.error)}`))
+                reject(createKimiApiError(data.error))
                 return
               }
 
@@ -886,7 +923,7 @@ export class KimiStreamHandler {
                 }
               }
 
-              if (data.done !== undefined) {
+              if (data.done === true) {
                 const { content: cleanContent, toolCalls } = this.toolCallingPlan?.shouldParseResponse
                   ? { content, toolCalls: [] }
                   : parseToolCallsFromText(content, 'kimi')
@@ -914,7 +951,6 @@ export class KimiStreamHandler {
                     message,
                     finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
                   }],
-                  usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
                 })
               }
             }
@@ -957,7 +993,6 @@ export class KimiStreamHandler {
             message,
             finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
           }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
         })
       })
     })

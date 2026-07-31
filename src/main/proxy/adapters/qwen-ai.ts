@@ -71,8 +71,12 @@ interface OpenAiUsage {
 function normalizeUsage(usage: any): OpenAiUsage | null {
   if (!usage || typeof usage !== 'object') return null
 
-  const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0)
-  const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0)
+  const hasPromptTokens = usage.prompt_tokens !== undefined || usage.input_tokens !== undefined
+  const hasCompletionTokens = usage.completion_tokens !== undefined || usage.output_tokens !== undefined
+  if (!hasPromptTokens || !hasCompletionTokens) return null
+
+  const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens)
+  const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens)
   const totalTokens = Number(usage.total_tokens ?? promptTokens + completionTokens)
 
   if (![promptTokens, completionTokens, totalTokens].every(Number.isFinite)) {
@@ -84,17 +88,6 @@ function normalizeUsage(usage: any): OpenAiUsage | null {
     completion_tokens: completionTokens,
     total_tokens: totalTokens,
   }
-}
-
-function redactHeaders(headers: Record<string, string>): Record<string, string> {
-  const sensitiveHeaders = new Set(['authorization', 'cookie', 'bx-ua', 'bx-umidtoken'])
-
-  return Object.fromEntries(
-    Object.entries(headers).map(([key, value]) => [
-      key,
-      sensitiveHeaders.has(key.toLowerCase()) ? '[REDACTED]' : value,
-    ])
-  )
 }
 
 const MODEL_ALIASES: Record<string, string> = {
@@ -150,6 +143,8 @@ export interface QwenAiOutputLimits {
   maxTokens?: number
   maxCompletionTokens?: number
 }
+
+export type QwenAiUpstreamCompletionState = 'complete' | 'output_limit' | 'incomplete'
 
 const QWEN_REASONING_BUDGETS: Record<string, number> = {
   minimal: 512,
@@ -416,7 +411,7 @@ export class QwenAiAdapter {
         headers: this.getHeaders(),
       })
 
-      console.log('[QwenAI] Create chat response:', JSON.stringify(response.data, null, 2))
+      console.log('[QwenAI] Create chat response status:', response.status)
 
       if (response.data?.data?.id) {
         console.log('[QwenAI] Created chat:', response.data.data.id)
@@ -425,7 +420,7 @@ export class QwenAiAdapter {
 
       throw new Error('Failed to create chat: no chat ID returned')
     } catch (error) {
-      console.error('[QwenAI] Failed to create chat:', error)
+      console.error('[QwenAI] Failed to create chat:', error instanceof Error ? error.message : 'Unknown error')
       throw error
     }
   }
@@ -443,10 +438,10 @@ export class QwenAiAdapter {
         return true
       }
 
-      console.warn('[QwenAI] Failed to delete chat:', response.data)
+      console.warn('[QwenAI] Failed to delete chat, status:', response.status)
       return false
     } catch (error) {
-      console.error('[QwenAI] Failed to delete chat:', error)
+      console.error('[QwenAI] Failed to delete chat:', error instanceof Error ? error.message : 'Unknown error')
       return false
     }
   }
@@ -470,10 +465,10 @@ export class QwenAiAdapter {
         return true
       }
 
-      console.warn('[QwenAI] Failed to delete all chats:', response.data)
+      console.warn('[QwenAI] Failed to delete all chats, status:', response.status)
       return false
     } catch (error) {
-      console.error('[QwenAI] Failed to delete all chats:', error)
+      console.error('[QwenAI] Failed to delete all chats:', error instanceof Error ? error.message : 'Unknown error')
       return false
     }
   }
@@ -565,10 +560,12 @@ export class QwenAiAdapter {
     const url = `${QWEN_AI_BASE}/api/v2/chat/completions?chat_id=${chatId}`
 
     console.log('[QwenAI] Sending request to /api/v2/chat/completions...')
-    console.log('[QwenAI] Request URL:', url)
-    console.log('[QwenAI] Request payload:', JSON.stringify(payload, null, 2))
+    console.log('[QwenAI] Request metadata:', {
+      model: modelId,
+      promptLength: userContent.length,
+      stream: true,
+    })
     const requestHeaders = this.getHeaders(chatId)
-    console.log('[QwenAI] Request headers:', JSON.stringify(redactHeaders(requestHeaders), null, 2))
 
     const response = await this.axiosInstance.post(url, payload, {
       headers: {
@@ -581,7 +578,6 @@ export class QwenAiAdapter {
     })
 
     console.log('[QwenAI] Response status:', response.status)
-    console.log('[QwenAI] Response headers:', JSON.stringify(response.headers, null, 2))
 
     return {
       response,
@@ -604,8 +600,33 @@ export class QwenAiStreamHandler {
   private content: string = ''
   private toolCallsSent: boolean = false
   private endNotified: boolean = false
-  private usage: OpenAiUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+  private usage: OpenAiUsage | null = null
   private outputLimits: QwenAiOutputLimits
+  private answerFinished: boolean = false
+  private doneSignalSeen: boolean = false
+  private outputLimitReached: boolean = false
+  private upstreamCandidateKeys: string[] = []
+  private upstreamChoiceEvents: Array<{
+    phase: string
+    status: string
+    content: string
+  }> = []
+  private responseCreatedChoiceOffsets: number[] = []
+  private upstreamEventSummary = {
+    eventCount: 0,
+    responseCreatedCount: 0,
+    responseCreatedChoiceOffsets: [] as number[],
+    choiceEventCount: 0,
+    maxChoicesPerEvent: 0,
+    choiceIndices: [] as Array<string | number>,
+    candidateCount: 0,
+    candidateSequence: [] as string[],
+    identityFields: [] as string[],
+    phaseStatusPairs: [] as string[],
+    deltaKeySets: [] as string[],
+    contentChunkCount: 0,
+    contentChars: 0,
+  }
 
   constructor(
     model: string,
@@ -620,6 +641,144 @@ export class QwenAiStreamHandler {
 
   setChatId(chatId: string) {
     this.chatId = chatId
+  }
+
+  getUpstreamEventSummary() {
+    return {
+      ...this.upstreamEventSummary,
+      responseCreatedChoiceOffsets: [...this.upstreamEventSummary.responseCreatedChoiceOffsets],
+      choiceIndices: [...this.upstreamEventSummary.choiceIndices],
+      candidateSequence: [...this.upstreamEventSummary.candidateSequence],
+      identityFields: [...this.upstreamEventSummary.identityFields],
+      phaseStatusPairs: [...this.upstreamEventSummary.phaseStatusPairs],
+      deltaKeySets: [...this.upstreamEventSummary.deltaKeySets],
+    }
+  }
+
+  getUpstreamCompletionState(): QwenAiUpstreamCompletionState {
+    if (this.outputLimitReached) return 'output_limit'
+    if (this.answerFinished || this.doneSignalSeen) return 'complete'
+    return 'incomplete'
+  }
+
+  getAlternativeAnswerContents(): string[] {
+    const laneCount = Math.min(this.upstreamEventSummary.responseCreatedCount, 4)
+    const isUnidentifiedMultiplex = this.hasUnidentifiedMultiplexedResponse()
+
+    if (!isUnidentifiedMultiplex) return []
+
+    const eventLanes = this.upstreamChoiceEvents.reduce(
+      (contents, event, index) => {
+        if (!['answer', 'final', 'none'].includes(event.phase) || !event.content) {
+          return contents
+        }
+        const laneIndex = index % laneCount
+        return contents.map((content, currentIndex) =>
+          currentIndex === laneIndex ? content + event.content : content
+        )
+      },
+      Array.from({ length: laneCount }, () => ''),
+    )
+    const answerChunks = this.upstreamChoiceEvents.filter((event) =>
+      ['answer', 'final', 'none'].includes(event.phase) && event.content
+    )
+    const contentLanes = answerChunks.reduce(
+      (contents, event, index) => {
+        const laneIndex = index % laneCount
+        return contents.map((content, currentIndex) =>
+          currentIndex === laneIndex ? content + event.content : content
+        )
+      },
+      Array.from({ length: laneCount }, () => ''),
+    )
+    const lanes = [...eventLanes, ...contentLanes]
+
+    return lanes.filter((content, index) =>
+      content.trim() && lanes.indexOf(content) === index
+    )
+  }
+
+  hasUnidentifiedMultiplexedResponse(): boolean {
+    const offsets = this.responseCreatedChoiceOffsets
+    return this.upstreamEventSummary.responseCreatedCount > 1
+      && this.upstreamEventSummary.candidateCount === 0
+      && offsets.length === this.upstreamEventSummary.responseCreatedCount
+      && offsets.every((offset) => offset === offsets[0])
+  }
+
+  private recordUpstreamEvent(data: any): void {
+    const choices = Array.isArray(data?.choices) ? data.choices : []
+    const choice = choices[0]
+    const delta = choice?.delta && typeof choice.delta === 'object' ? choice.delta : {}
+    const remember = <T>(values: T[], value: T, limit: number = 24): T[] =>
+      values.includes(value) || values.length >= limit ? values : [...values, value]
+    const identityEntries: Array<[string, unknown]> = [
+      ['choice.index', choice?.index],
+      ['choice.id', choice?.id],
+      ['choice.message_id', choice?.message_id],
+      ['delta.id', delta.id],
+      ['delta.response_id', delta.response_id],
+      ['delta.message_id', delta.message_id],
+      ['delta.choice_id', delta.choice_id],
+      ['delta.parent_id', delta.parent_id],
+      ['delta.extra.response_id', delta.extra?.response_id],
+      ['delta.extra.message_id', delta.extra?.message_id],
+    ].filter((entry) => ['string', 'number'].includes(typeof entry[1]))
+    const candidateKey = identityEntries
+      .map(([field, value]) => `${field}:${String(value)}`)
+      .join('|')
+    let candidateKeys = this.upstreamCandidateKeys
+    let candidateSequence = this.upstreamEventSummary.candidateSequence
+
+    if (candidateKey) {
+      const existingIndex = candidateKeys.indexOf(candidateKey)
+      const candidateIndex = existingIndex >= 0 ? existingIndex : candidateKeys.length
+      candidateKeys = existingIndex >= 0 ? candidateKeys : [...candidateKeys, candidateKey]
+      candidateSequence = candidateSequence.length >= 80
+        ? candidateSequence
+        : [...candidateSequence, `candidate_${candidateIndex + 1}`]
+    }
+
+    const phase = typeof delta.phase === 'string' ? delta.phase : 'none'
+    const status = typeof delta.status === 'string' ? delta.status : 'none'
+    const deltaKeySet = Object.keys(delta).sort().join(',') || 'none'
+    const contentLength = typeof delta.content === 'string' ? delta.content.length : 0
+    const responseCreated = !!data?.['response.created']?.response_id
+    const responseCreatedChoiceOffsets = responseCreated
+      ? [...this.responseCreatedChoiceOffsets, this.upstreamChoiceEvents.length]
+      : this.responseCreatedChoiceOffsets
+    const upstreamChoiceEvents = choices.length > 0
+      ? [...this.upstreamChoiceEvents, { phase, status, content: typeof delta.content === 'string' ? delta.content : '' }]
+      : this.upstreamChoiceEvents
+
+    this.upstreamCandidateKeys = candidateKeys
+    this.responseCreatedChoiceOffsets = responseCreatedChoiceOffsets
+    this.upstreamChoiceEvents = upstreamChoiceEvents
+    this.upstreamEventSummary = {
+      eventCount: this.upstreamEventSummary.eventCount + 1,
+      responseCreatedCount: this.upstreamEventSummary.responseCreatedCount
+        + (responseCreated ? 1 : 0),
+      responseCreatedChoiceOffsets,
+      choiceEventCount: this.upstreamEventSummary.choiceEventCount + (choices.length > 0 ? 1 : 0),
+      maxChoicesPerEvent: Math.max(this.upstreamEventSummary.maxChoicesPerEvent, choices.length),
+      choiceIndices: choice?.index !== undefined
+        ? remember(this.upstreamEventSummary.choiceIndices, choice.index)
+        : this.upstreamEventSummary.choiceIndices,
+      candidateCount: candidateKeys.length,
+      candidateSequence,
+      identityFields: identityEntries.reduce(
+        (fields, [field]) => remember(fields, field),
+        this.upstreamEventSummary.identityFields,
+      ),
+      phaseStatusPairs: choices.length > 0
+        ? remember(this.upstreamEventSummary.phaseStatusPairs, `${phase}:${status}`)
+        : this.upstreamEventSummary.phaseStatusPairs,
+      deltaKeySets: choices.length > 0
+        ? remember(this.upstreamEventSummary.deltaKeySets, deltaKeySet)
+        : this.upstreamEventSummary.deltaKeySets,
+      contentChunkCount: this.upstreamEventSummary.contentChunkCount + (contentLength > 0 ? 1 : 0),
+      contentChars: this.upstreamEventSummary.contentChars + contentLength,
+    }
   }
 
   private notifyEnd(): void {
@@ -670,7 +829,7 @@ export class QwenAiStreamHandler {
           model: this.model,
           object: 'chat.completion.chunk',
           choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
-          usage: this.usage,
+          ...(this.usage ? { usage: this.usage } : {}),
           created: this.created,
         })}\n\n`
       )
@@ -747,7 +906,7 @@ export class QwenAiStreamHandler {
         model: this.model,
         object: 'chat.completion.chunk',
         choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
-        usage: this.usage,
+        ...(this.usage ? { usage: this.usage } : {}),
         created: this.created,
       }
       transStream.write(`data: ${JSON.stringify(finalChunk)}\n\n`)
@@ -777,11 +936,13 @@ export class QwenAiStreamHandler {
         try {
           if (event.data === '[DONE]') {
             console.log('[QwenAI] Received [DONE] signal')
+            this.doneSignalSeen = true
             finishStream()
             return
           }
 
           const data = JSON.parse(event.data)
+          this.recordUpstreamEvent(data)
           console.log('[QwenAI] Parsed JSON data keys:', Object.keys(data))
 
           const upstreamError = getUpstreamError(data)
@@ -805,7 +966,23 @@ export class QwenAiStreamHandler {
           }
 
           if (data['response.created']?.response_id) {
-            this.responseId = data['response.created'].response_id
+            const nextResponseId = data['response.created'].response_id
+            const responseRestarted = !!this.responseId && this.responseId !== nextResponseId
+            if (responseRestarted) {
+              console.warn('[QwenAI] Upstream response restarted; discarding superseded partial output')
+              this.content = ''
+              this.usage = null
+              reasoningText = ''
+              summaryText = ''
+              totalLimitReached = false
+              answerLimitReached = false
+              lastCompletionTokens = 0
+              answerTokenBaseline = undefined
+              this.answerFinished = false
+              this.doneSignalSeen = false
+              this.outputLimitReached = false
+            }
+            this.responseId = nextResponseId
             console.log('[QwenAI] Got response_id:', this.responseId)
           }
 
@@ -922,6 +1099,7 @@ export class QwenAiStreamHandler {
               && (totalLimitReached || answerLimitReached)
               && this.content.trim()
             ) {
+              this.outputLimitReached = true
               console.log('[QwenAI] Output limit reached; stopping upstream stream')
               finishStream('length')
               if (typeof stream.destroy === 'function' && !stream.destroyed) {
@@ -934,7 +1112,10 @@ export class QwenAiStreamHandler {
               ['finished', 'completed', 'done'].includes(status) &&
               (phase === 'answer' || phase === 'final' || phase == null)
             ) {
-              finishStream(delta.finish_reason || choice.finish_reason || 'stop')
+              const finishReason = delta.finish_reason || choice.finish_reason || 'stop'
+              this.answerFinished = true
+              if (finishReason === 'length') this.outputLimitReached = true
+              finishStream(finishReason)
             }
           }
 
@@ -943,6 +1124,7 @@ export class QwenAiStreamHandler {
             && (totalLimitReached || answerLimitReached)
             && this.content.trim()
           ) {
+            this.outputLimitReached = true
             console.log('[QwenAI] Output limit reached on usage event; stopping upstream stream')
             finishStream('length')
             if (typeof stream.destroy === 'function' && !stream.destroyed) {
@@ -987,7 +1169,7 @@ export class QwenAiStreamHandler {
 
   async handleNonStream(stream: any): Promise<any> {
     return new Promise((resolve, reject) => {
-      const data = {
+      const data: any = {
         id: '',
         model: this.model,
         object: 'chat.completion',
@@ -998,7 +1180,6 @@ export class QwenAiStreamHandler {
             finish_reason: 'stop',
           },
         ],
-        usage: { ...this.usage },
         created: this.created,
       }
 
@@ -1048,11 +1229,13 @@ export class QwenAiStreamHandler {
 
           try {
             if (event.data === '[DONE]') {
+              this.doneSignalSeen = true
               finish()
               return
             }
 
             const parsed = JSON.parse(event.data)
+            this.recordUpstreamEvent(parsed)
 
             const upstreamError = getUpstreamError(parsed)
             if (upstreamError) {
@@ -1076,7 +1259,26 @@ export class QwenAiStreamHandler {
             }
 
             if (parsed['response.created']?.response_id) {
-              this.responseId = parsed['response.created'].response_id
+              const nextResponseId = parsed['response.created'].response_id
+              const responseRestarted = !!this.responseId && this.responseId !== nextResponseId
+              if (responseRestarted) {
+                console.warn('[QwenAI] Upstream response restarted; discarding superseded partial output')
+                data.choices[0].message.content = ''
+                data.choices[0].message.reasoning_content = ''
+                data.choices[0].finish_reason = 'stop'
+                delete data.usage
+                this.usage = null
+                reasoningText = ''
+                summaryText = ''
+                totalLimitReached = false
+                answerLimitReached = false
+                lastCompletionTokens = 0
+                answerTokenBaseline = undefined
+                this.answerFinished = false
+                this.doneSignalSeen = false
+                this.outputLimitReached = false
+              }
+              this.responseId = nextResponseId
               data.id = this.responseId
             }
 
@@ -1116,6 +1318,7 @@ export class QwenAiStreamHandler {
                   (totalLimitReached || answerLimitReached)
                   && data.choices[0].message.content.trim()
                 ) {
+                  this.outputLimitReached = true
                   data.choices[0].finish_reason = 'length'
                   console.log('[QwenAI] Output limit reached; stopping upstream stream')
                   finish()
@@ -1125,7 +1328,10 @@ export class QwenAiStreamHandler {
                   return
                 }
                 if (['finished', 'completed', 'done'].includes(status)) {
-                  data.choices[0].finish_reason = delta.finish_reason || parsed.choices[0].finish_reason || 'stop'
+                  const finishReason = delta.finish_reason || parsed.choices[0].finish_reason || 'stop'
+                  this.answerFinished = true
+                  if (finishReason === 'length') this.outputLimitReached = true
+                  data.choices[0].finish_reason = finishReason
                   finish()
                 }
               }
@@ -1136,6 +1342,7 @@ export class QwenAiStreamHandler {
               && (totalLimitReached || answerLimitReached)
               && data.choices[0].message.content.trim()
             ) {
+              this.outputLimitReached = true
               data.choices[0].finish_reason = 'length'
               console.log('[QwenAI] Output limit reached on usage event; stopping upstream stream')
               finish()

@@ -109,6 +109,8 @@ export interface Account {
   updatedAt: number
   /** Error message (when status is error) */
   errorMessage?: string
+  /** Last credential/health check time */
+  lastStatusCheck?: number
   /** Request count */
   requestCount?: number
   /** Daily request limit */
@@ -445,6 +447,25 @@ export interface RequestLogEntry {
   webSearch?: boolean
   /** Reasoning effort level */
   reasoningEffort?: string | boolean
+
+  /** Bounded tool-repair observability (structural metadata only). */
+  repair_attempted?: boolean
+  repair_attempts?: number
+  repair_result?: 'not_attempted' | 'succeeded' | 'failed'
+  first_validation_error?: string
+  final_validation_error?: string
+  first_field_types?: Array<{
+    json_pointer: string
+    expected: string
+    actual_type: string
+    keyword: string
+  }>
+  final_field_types?: Array<{
+    json_pointer: string
+    expected: string
+    actual_type: string
+    keyword: string
+  }>
 
   /** Response status code */
   responseStatus: number

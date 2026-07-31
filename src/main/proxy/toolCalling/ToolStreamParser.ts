@@ -1,5 +1,7 @@
 import type { ToolCallingPlan } from './types.ts'
-import { getToolProtocol } from './protocols/index.ts'
+import { stripFencedCodeBlocks } from './protocols/shared.ts'
+import { findToolProtocolMarkerStart, parseToolCallContent } from './responseParser.ts'
+import { ToolCallingResponseError, validateAndSanitizeToolCalls } from './ToolCallingEngine.ts'
 
 export class ToolStreamParser {
   private readonly plan: ToolCallingPlan
@@ -14,6 +16,7 @@ export class ToolStreamParser {
 
   push(content: string, baseChunk: any, includeRole: boolean = false): any[] {
     if (!content || !this.plan.shouldParseResponse) return []
+    if (this.emittedToolCall) return []
 
     this.buffer += content
     const chunks: any[] = []
@@ -22,13 +25,15 @@ export class ToolStreamParser {
       const markerStart = findMarkerStart(this.buffer, this.plan)
       if (markerStart.matched) {
         if (markerStart.index > 0) {
-          chunks.push(createContentChunk(baseChunk, this.buffer.slice(0, markerStart.index), includeRole))
+          const prefix = stripFencedCodeBlocks(this.buffer.slice(0, markerStart.index))
+          if (prefix) chunks.push(createContentChunk(baseChunk, prefix, includeRole))
         }
         this.buffer = this.buffer.slice(markerStart.index)
         this.isBufferingToolCall = true
       } else if (markerStart.partial) {
         if (markerStart.index > 0) {
-          chunks.push(createContentChunk(baseChunk, this.buffer.slice(0, markerStart.index), includeRole))
+          const prefix = stripFencedCodeBlocks(this.buffer.slice(0, markerStart.index))
+          if (prefix) chunks.push(createContentChunk(baseChunk, prefix, includeRole))
           this.buffer = this.buffer.slice(markerStart.index)
         }
         this.isBufferingToolCall = true
@@ -42,7 +47,8 @@ export class ToolStreamParser {
 
     const parsed = parseBufferedToolCall(this.buffer, this.plan)
     if (parsed.toolCalls.length > 0) {
-      for (const toolCall of parsed.toolCalls) {
+      const validatedToolCalls = validateAndSanitizeToolCalls(parsed.toolCalls, this.plan)
+      for (const toolCall of validatedToolCalls) {
         const indexedToolCall = {
           ...toolCall,
           index: this.nextToolCallIndex,
@@ -57,20 +63,19 @@ export class ToolStreamParser {
       return chunks
     }
 
-    if (parsed.invalidToolNames.length > 0 || parsed.rawMatches.length > 0) {
-      this.isBufferingToolCall = false
-      this.buffer = ''
-    }
-
     return chunks
   }
 
   flush(baseChunk: any): any[] {
-    if (!this.buffer) return []
+    if (!this.buffer) {
+      this.assertRequiredToolCall()
+      return []
+    }
 
     const parsed = parseBufferedToolCall(this.buffer, this.plan)
     if (parsed.toolCalls.length > 0) {
-      const chunks = parsed.toolCalls.map((toolCall) => {
+      const validatedToolCalls = validateAndSanitizeToolCalls(parsed.toolCalls, this.plan)
+      const chunks = validatedToolCalls.map((toolCall) => {
         const indexedToolCall = {
           ...toolCall,
           index: this.nextToolCallIndex,
@@ -89,7 +94,12 @@ export class ToolStreamParser {
     const text = this.buffer
     this.buffer = ''
     this.isBufferingToolCall = false
-    return shouldReleaseText ? [createContentChunk(baseChunk, text, false)] : []
+    this.assertRequiredToolCall(parsed)
+    const recognizedProtocol = parsed.protocol !== 'unknown'
+      || Boolean(parsed.detectedProtocols?.length)
+    return shouldReleaseText && !recognizedProtocol
+      ? [createContentChunk(baseChunk, text, false)]
+      : []
   }
 
   hasEmittedToolCall(): boolean {
@@ -99,50 +109,61 @@ export class ToolStreamParser {
   isBuffering(): boolean {
     return this.isBufferingToolCall
   }
+
+  private assertRequiredToolCall(parsed?: ReturnType<typeof parseToolCallContent>): void {
+    if (this.emittedToolCall) return
+    if (this.plan.toolChoiceMode !== 'required' && this.plan.toolChoiceMode !== 'forced') return
+
+    const malformedName = parsed?.malformedToolNames?.[0]
+    if (malformedName) {
+      const reason = parsed?.malformedReason || 'arguments could not be parsed'
+      throw new ToolCallingResponseError(
+        `Upstream model returned invalid tool arguments for "${sanitizeName(malformedName)}": ${reason}`,
+        'invalid_arguments',
+        this.plan.diagnostics,
+        [reason],
+        malformedName,
+        true,
+      )
+    }
+
+    const details = [
+      parsed?.invalidToolNames?.length
+        ? `invalid tools: ${parsed.invalidToolNames.map(sanitizeName).join(', ')}`
+        : undefined,
+      parsed?.malformedReason,
+    ].filter(Boolean).join('; ')
+    throw new ToolCallingResponseError(
+      `Upstream model did not return the required tool call${details ? ` (${details})` : ''}`,
+      'missing_required_call',
+      this.plan.diagnostics,
+      [],
+      undefined,
+      false,
+    )
+  }
 }
 
 function parseBufferedToolCall(buffer: string, plan: ToolCallingPlan) {
-  const selected = getToolProtocol(plan.protocol)
-  return selected.parse(buffer, { tools: plan.tools, protocol: plan.protocol })
+  const parsed = parseToolCallContent(buffer, plan)
+  plan.diagnostics = {
+    ...plan.diagnostics,
+    parserFormat: parsed.protocol,
+    detectedProtocols: parsed.detectedProtocols,
+    parsedToolCallCount: parsed.toolCalls.length,
+    invalidToolNames: [...parsed.invalidToolNames],
+    malformedToolNames: [...(parsed.malformedToolNames ?? [])],
+    malformedReason: parsed.malformedReason,
+  }
+  return parsed
 }
 
 function findMarkerStart(buffer: string, plan: ToolCallingPlan): { matched: boolean; partial: boolean; index: number } {
-  const protocol = getToolProtocol(plan.protocol)
-  const ranges = fencedRanges(buffer)
-  let partialIndex = -1
-
-  for (let index = 0; index < buffer.length; index += 1) {
-    if (isInsideRange(index, ranges)) continue
-
-    const suffix = buffer.slice(index)
-    const detection = protocol.detectStart(suffix)
-    if (detection.matched && detection.markerStart === 0) {
-      return { matched: true, partial: false, index }
-    }
-    if (detection.partial && detection.markerStart === 0 && partialIndex === -1) {
-      partialIndex = index
-    }
-  }
-
-  return partialIndex === -1
-    ? { matched: false, partial: false, index: -1 }
-    : { matched: false, partial: true, index: partialIndex }
+  return findToolProtocolMarkerStart(buffer, plan)
 }
 
-function fencedRanges(content: string): Array<{ start: number; end: number }> {
-  const ranges: Array<{ start: number; end: number }> = []
-  const pattern = /```[\s\S]*?```/g
-  let match: RegExpExecArray | null
-
-  while ((match = pattern.exec(content)) !== null) {
-    ranges.push({ start: match.index, end: match.index + match[0].length })
-  }
-
-  return ranges
-}
-
-function isInsideRange(index: number, ranges: Array<{ start: number; end: number }>): boolean {
-  return ranges.some((range) => index >= range.start && index < range.end)
+function sanitizeName(name: string): string {
+  return name.replace(/[\r\n\t]/g, ' ').slice(0, 128)
 }
 
 function createContentChunk(baseChunk: any, content: string, includeRole: boolean): any {

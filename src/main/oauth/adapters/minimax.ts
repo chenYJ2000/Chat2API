@@ -174,7 +174,7 @@ export class MiniMaxAdapter extends BaseOAuthAdapter {
       }
     }
 
-    console.log('[MiniMax OAuth] Validating token:', token.substring(0, 50) + '...')
+    console.log('[MiniMax OAuth] Validating configured token')
 
     try {
       // Parse token to extract realUserID and JWT
@@ -190,7 +190,10 @@ export class MiniMaxAdapter extends BaseOAuthAdapter {
         realUserID = this.extractUserIdFromToken(token) || ''
       }
 
-      console.log('[MiniMax OAuth] realUserID:', realUserID, 'jwtToken:', jwtToken.substring(0, 30) + '...')
+      console.log('[MiniMax OAuth] Parsed credentials:', {
+        hasRealUserID: !!realUserID,
+        hasJwtToken: !!jwtToken,
+      })
 
       // Build request with proper signatures (same as proxy adapter)
       const unix = `${Date.now()}`
@@ -215,8 +218,6 @@ export class MiniMaxAdapter extends BaseOAuthAdapter {
       const yy = md5(`${encodeURIComponent(fullUri)}_${dataJson}${md5(unix)}ooui`)
       const signature = md5(`${timestamp}${jwtToken}${dataJson}`)
 
-      console.log('[MiniMax OAuth] Request - uuid:', realUserID, 'user_id:', realUserID)
-
       const response = await axios.request({
         method: 'GET',
         url: `${MINIMAX_API_BASE}${fullUri}`,
@@ -234,7 +235,6 @@ export class MiniMaxAdapter extends BaseOAuthAdapter {
       })
 
       console.log('[MiniMax OAuth] Validation response status:', response.status)
-      console.log('[MiniMax OAuth] Validation response data:', JSON.stringify(response.data))
 
       if (response.status !== 200 || response.data?.statusInfo?.code !== 0) {
         const errorMsg = response.data?.statusInfo?.message || 'Token is invalid or expired'

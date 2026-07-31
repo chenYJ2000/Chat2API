@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { ToolStreamParser } from '../../src/main/proxy/toolCalling/ToolStreamParser.ts'
+import { ToolCallingResponseError } from '../../src/main/proxy/toolCalling/ToolCallingEngine.ts'
 import type { ToolCallingPlan } from '../../src/main/proxy/toolCalling/types.ts'
 
 const tools = [
@@ -33,6 +34,10 @@ function plan(protocol: ToolCallingPlan['protocol'] = 'managed_xml'): ToolCallin
   }
 }
 
+function requiredPlan(protocol: ToolCallingPlan['protocol'] = 'managed_xml'): ToolCallingPlan {
+  return { ...plan(protocol), toolChoiceMode: 'required' }
+}
+
 const baseChunk = {
   id: 'chatcmpl_1',
   object: 'chat.completion.chunk',
@@ -48,13 +53,13 @@ test('bracket marker split across chunks emits a tool call', () => {
   assert.equal(chunks.at(-1)?.choices[0].delta.tool_calls[0].function.name, 'default_api:read_file')
 })
 
-test('bracket output is text when XML protocol is selected', () => {
+test('bracket output is autodetected when XML protocol is selected', () => {
   const parser = new ToolStreamParser(plan('managed_xml'))
   const text = '[function_calls][call:default_api:read_file]{"filePath":"/tmp/a"}[/call][/function_calls]'
   const chunks = parser.push(text, baseChunk)
 
   assert.equal(chunks.length, 1)
-  assert.equal(chunks[0].choices[0].delta.content, text)
+  assert.equal(chunks[0].choices[0].delta.tool_calls[0].function.name, 'default_api:read_file')
 })
 
 test('XML marker split across chunks emits a tool call', () => {
@@ -96,13 +101,27 @@ test('invalid tool name is not emitted as a tool call', () => {
   assert.equal(chunks.some((chunk) => chunk.choices[0].delta.tool_calls), false)
 })
 
-test('fenced code block examples are emitted as text and never as tool calls', () => {
+test('fenced tool blocks preserve their contents and emit tool calls without fence leakage', () => {
   const parser = new ToolStreamParser(plan('managed_xml'))
   const text = '```xml\n<tool_calls><invoke name="default_api:read_file"><parameter name="filePath">fake</parameter></invoke></tool_calls>\n```'
   const chunks = parser.push(text, baseChunk)
 
   assert.equal(chunks.length, 1)
-  assert.equal(chunks[0].choices[0].delta.content, text)
+  assert.equal(chunks[0].choices[0].delta.tool_calls[0].function.arguments, '{"filePath":"fake"}')
+  assert.equal(JSON.stringify(chunks).includes('```'), false)
+})
+
+test('pretty-printed OpenAI JSON split before its first key does not leak as text', () => {
+  const parser = new ToolStreamParser(plan('managed_xml'))
+  assert.deepEqual(parser.push('{\n  ', baseChunk), [])
+  const chunks = parser.push(
+    '"tool_calls": [{"function": {"name": "default_api:read_file", "arguments": {"filePath": "/tmp/pretty"}}}]\n}',
+    baseChunk,
+  )
+
+  assert.equal(chunks.length, 1)
+  assert.equal(chunks[0].choices[0].delta.content, undefined)
+  assert.equal(chunks[0].choices[0].delta.tool_calls[0].function.arguments, '{"filePath":"/tmp/pretty"}')
 })
 
 test('generated call IDs stay stable between emitted chunks and final state', () => {
@@ -113,4 +132,36 @@ test('generated call IDs stay stable between emitted chunks and final state', ()
   assert.equal(parser.hasEmittedToolCall(), true)
   assert.equal(emittedId, 'call_0')
   assert.deepEqual(parser.flush(baseChunk), [])
+})
+
+test('required stream classifies an empty legal invoke as repairable invalid arguments', () => {
+  const parser = new ToolStreamParser(requiredPlan())
+  parser.push(
+    '<tool_calls><invoke name="default_api:read_file"></invoke></tool_calls>',
+    baseChunk,
+  )
+
+  assert.throws(
+    () => parser.flush(baseChunk),
+    (error: unknown) => (
+      error instanceof ToolCallingResponseError
+      && error.code === 'invalid_arguments'
+      && error.toolName === 'default_api:read_file'
+      && error.repairable
+    ),
+  )
+})
+
+test('required stream rejects a completed plain-text response at flush', () => {
+  const parser = new ToolStreamParser(requiredPlan())
+  parser.push('No tool call.', baseChunk)
+
+  assert.throws(
+    () => parser.flush(baseChunk),
+    (error: unknown) => (
+      error instanceof ToolCallingResponseError
+      && error.code === 'missing_required_call'
+      && !error.repairable
+    ),
+  )
 })

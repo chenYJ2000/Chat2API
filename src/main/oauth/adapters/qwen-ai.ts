@@ -129,7 +129,10 @@ export class QwenAiAdapter extends BaseOAuthAdapter {
               },
             }
           } catch (apiError) {
-            console.log('[QwenAi OAuth] API validation failed, using JWT payload only:', apiError)
+            console.log(
+              '[QwenAi OAuth] API validation failed, using JWT payload only:',
+              apiError instanceof Error ? apiError.message : 'Unknown error'
+            )
             return {
               valid: true,
               tokenType: 'access',

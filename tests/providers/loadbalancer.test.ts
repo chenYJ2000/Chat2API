@@ -36,6 +36,8 @@ function installStoreFixture(t: TestContext) {
     ;(storeManager as any).getEffectiveModels = originals.getEffectiveModels
     ;(storeManager as any).getConfig = originals.getConfig
   })
+
+  return { provider, accounts }
 }
 
 test('Qwen mode suffixes route through the base display model', (t) => {
@@ -73,4 +75,18 @@ test('quarantined accounts are excluded for every balancing strategy', (t) => {
 
   const selected = loadBalancer.selectAccount('Qwen3.6-Plus', 'round-robin')
   assert.equal(selected?.account.id, 'account-b')
+})
+
+test('model availability count follows persisted account and provider health', (t) => {
+  const { provider, accounts } = installStoreFixture(t)
+  const loadBalancer = new LoadBalancer()
+
+  assert.equal(loadBalancer.getAvailableAccountCount('Qwen3.6-Plus', provider.id), 2)
+  accounts[0].status = 'error'
+  accounts[1].status = 'error'
+  assert.equal(loadBalancer.getAvailableAccountCount('Qwen3.6-Plus', provider.id), 0)
+
+  accounts[0].status = 'active'
+  provider.enabled = false
+  assert.equal(loadBalancer.getAvailableAccountCount('Qwen3.6-Plus', provider.id), 0)
 })

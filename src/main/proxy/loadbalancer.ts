@@ -94,6 +94,7 @@ export class LoadBalancer {
     model: string,
     preferredProviderId?: string,
     excludedAccountIds: ReadonlySet<string> = new Set(),
+    logAvailability: boolean = true,
   ): AccountSelection[] {
     const providers = storeManager.getProviders().filter(p => p.enabled)
     const candidates: AccountSelection[] = []
@@ -112,10 +113,14 @@ export class LoadBalancer {
         .filter(account => !this.isAccountInFailure(account.id))
         .filter(account => !excludedAccountIds.has(account.id))
 
-      console.log(`[LoadBalancer] Provider ${provider.name} (${provider.id}) has ${accounts.length} available accounts`)
+      if (logAvailability) {
+        console.log(`[LoadBalancer] Provider ${provider.name} (${provider.id}) has ${accounts.length} available accounts`)
+      }
 
       for (const account of accounts) {
-        console.log(`[LoadBalancer] Account ${account.name} (${account.id}) is available`)
+        if (logAvailability) {
+          console.log(`[LoadBalancer] Account ${account.name} (${account.id}) is available`)
+        }
         candidates.push({
           account,
           provider,
@@ -318,7 +323,7 @@ export class LoadBalancer {
    * Get available account count
    */
   getAvailableAccountCount(model: string, providerId?: string): number {
-    return this.getAvailableAccounts(model, providerId).length
+    return this.getAvailableAccounts(model, providerId, new Set(), false).length
   }
 
   /**

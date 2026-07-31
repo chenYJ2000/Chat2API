@@ -10,6 +10,28 @@ export type ToolProtocolId =
 
 export type ToolSource = 'openai' | 'mcp'
 
+export type JsonRuntimeType =
+  | 'missing'
+  | 'null'
+  | 'array'
+  | 'object'
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'unknown'
+
+/**
+ * Structural validation context safe for diagnostics. Values are deliberately
+ * excluded so trading arguments and other tool payload data are not logged.
+ */
+export interface ToolArgumentValidationIssue {
+  jsonPointer: string
+  keyword: string
+  message: string
+  expected: string
+  actualType: JsonRuntimeType
+}
+
 export interface NormalizedToolDefinition {
   name: string
   description?: string
@@ -46,10 +68,43 @@ export interface ToolCallDiagnostics {
   injected: boolean
   reason: string
   parserFormat?: ToolProtocolId | 'unknown'
+  detectedProtocols?: ToolProtocolId[]
   parsedToolCallCount?: number
   malformedReason?: string
   invalidToolNames?: string[]
+  malformedToolNames?: string[]
+  fencedBlockDetected?: boolean
+  rawContentPreview?: string
+  rawMatchPreviews?: string[]
+  parsedArgumentsPreview?: Array<{ name: string; arguments: string }>
+  schemaValidationErrors?: string[]
+  schemaValidationIssues?: ToolArgumentValidationIssue[]
   wrapperLeakDetected?: boolean
+  upstreamEventSummary?: {
+    eventCount: number
+    responseCreatedCount: number
+    responseCreatedChoiceOffsets: number[]
+    choiceEventCount: number
+    maxChoicesPerEvent: number
+    choiceIndices: Array<string | number>
+    candidateCount: number
+    candidateSequence: string[]
+    identityFields: string[]
+    phaseStatusPairs: string[]
+    deltaKeySets: string[]
+    contentChunkCount: number
+    contentChars: number
+  }
+  candidateContentCount?: number
+  selectedCandidateIndex?: number
+  candidateAttempts?: Array<{
+    index: number
+    chars: number
+    parserFormat?: ToolProtocolId | 'unknown'
+    detectedProtocols?: ToolProtocolId[]
+    malformedReason?: string
+    rawContentPreview?: string
+  }>
   toolChoiceMode?: 'auto' | 'none' | 'required' | 'forced'
   forcedToolName?: string
   allowedToolNames?: string[]
@@ -87,4 +142,6 @@ export interface ToolParseResult {
   rawMatches: string[]
   malformedReason?: string
   invalidToolNames: string[]
+  malformedToolNames?: string[]
+  detectedProtocols?: ToolProtocolId[]
 }

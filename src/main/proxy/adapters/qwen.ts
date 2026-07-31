@@ -244,7 +244,7 @@ export class QwenAdapter {
     )
 
     if (response.status !== 200 || response.data?.success === false) {
-      console.warn('[Qwen] Failed to delete related file records:', response.status, response.data)
+      console.warn('[Qwen] Failed to delete related file records, status:', response.status)
       return false
     }
 
@@ -428,7 +428,6 @@ export class QwenAdapter {
     })
 
     console.log('[Qwen] Response status:', response.status)
-    console.log('[Qwen] Response headers:', JSON.stringify(response.headers, null, 2))
 
     return { response, sessionId, reqId }
   }
@@ -570,7 +569,6 @@ export class QwenStreamHandler {
           model: this.model,
           object: 'chat.completion.chunk',
           choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
           created: this.created,
         })}\n\n`
       )
@@ -684,7 +682,12 @@ export class QwenStreamHandler {
               if (!this.sentRole && eventThinkingContent.length > this.thinkingContent.length) {
                 const chunk = eventThinkingContent.substring(this.thinkingContent.length)
                 this.thinkingContent = eventThinkingContent
-                console.log('[Qwen] Thinking chunk, length:', chunk.length, 'content:', chunk.substring(0, 50), 'type:', eventThinkingType, 'prev:', this.thinkingContent.length - chunk.length, '->', this.thinkingContent.length)
+                console.log('[Qwen] Thinking chunk metadata:', {
+                  length: chunk.length,
+                  type: eventThinkingType,
+                  previousLength: this.thinkingContent.length - chunk.length,
+                  totalLength: this.thinkingContent.length,
+                })
 
                 if (chunk.trim()) {
                   // Send reasoning_content delta
@@ -776,7 +779,6 @@ export class QwenStreamHandler {
                         model: this.model,
                         object: 'chat.completion.chunk',
                         choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
-                        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
                         created: this.created,
                       })}\n\n`
                     )
@@ -828,7 +830,6 @@ export class QwenStreamHandler {
                 model: this.model,
                 object: 'chat.completion.chunk',
                 choices: [{ index: 0, delta: {}, finish_reason: finishReason }],
-                usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
                 created: this.created,
               })}\n\n`
             )
@@ -909,7 +910,7 @@ export class QwenStreamHandler {
           message: { role: string; content: string | null; reasoning_content?: string; tool_calls?: any[] }
           finish_reason: string
         }>
-        usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+        usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
         created: number
       } = {
         id: '',
@@ -922,7 +923,6 @@ export class QwenStreamHandler {
             finish_reason: 'stop',
           },
         ],
-        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
         created: this.created,
       }
 

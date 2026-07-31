@@ -272,7 +272,7 @@ export class MiniMaxAdapter {
       }
     )
 
-    console.log('[MiniMax] Device register response:', response.status, JSON.stringify(response.data))
+    console.log('[MiniMax] Device register response status:', response.status)
 
     if (response.status !== 200 || response.data?.statusInfo?.code !== 0) {
       throw new Error(`Failed to register device: ${response.data?.statusInfo?.message || response.status}`)
@@ -290,7 +290,7 @@ export class MiniMaxAdapter {
     }
 
     deviceInfoMap.set(cacheKey, result)
-    console.log('[MiniMax] Device info cached:', { deviceId: result.deviceId, userId: result.userId, realUserID: result.realUserID, uuid: result.uuid })
+    console.log('[MiniMax] Device info cached successfully')
     return result
   }
 
@@ -375,7 +375,7 @@ export class MiniMaxAdapter {
     console.log('[MiniMax] Stream Request - uuid:', realUserID, 'user_id:', realUserID, 'device_id:', deviceInfo.deviceId)
     console.log('[MiniMax] Request body:', dataJson)
     console.log('[MiniMax] Query string:', queryStr)
-    console.log('[MiniMax] Headers - timestamp:', timestamp, 'signature:', signature.substring(0, 16) + '...', 'yy:', yy.substring(0, 16) + '...')
+    console.log('[MiniMax] Signed request headers prepared, timestamp:', timestamp)
 
     const session = await new Promise<ClientHttp2Session>((resolve, reject) => {
       const session = http2.connect(AGENT_BASE_URL)
@@ -405,11 +405,7 @@ export class MiniMaxAdapter {
     stream.setEncoding('utf8')
 
     stream.on('response', (respHeaders) => {
-      console.log('[MiniMax] HTTP/2 response headers:', JSON.stringify(respHeaders))
-    })
-
-    stream.on('data', (chunk) => {
-      console.log('[MiniMax] HTTP/2 data chunk:', chunk.toString().substring(0, 200))
+      console.log('[MiniMax] HTTP/2 response status:', respHeaders[':status'])
     })
 
     stream.on('error', (err) => {
@@ -670,7 +666,6 @@ export class MiniMaxAdapter {
           },
           finish_reason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
         }],
-        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
         created: this.created,
       },
     }
@@ -882,7 +877,7 @@ export class MiniMaxAdapter {
       try {
         const deviceInfo = await this.requestDeviceInfo()
         const response = await this.request('POST', '/matrix/api/v1/chat/delete_chat', { chat_id: parseInt(chatId, 10) }, deviceInfo)
-        console.log('[MiniMax] Chat deleted attempt', attempt, ':', chatId, 'Status:', response.status, 'Response:', JSON.stringify(response.data))
+        console.log('[MiniMax] Chat deleted attempt', attempt, ':', chatId, 'Status:', response.status)
         
         if (response.status === 200 && response.data?.base_resp?.status_code === 0) {
           return true
@@ -1118,7 +1113,10 @@ export class MiniMaxStreamHandler {
           const eventName = event.event
           if (event.data === '[DONE]') return
 
-          console.log('[MiniMax] SSE event:', eventName, 'data:', event.data?.substring(0, 100))
+          console.log('[MiniMax] SSE event metadata:', {
+            eventName,
+            dataLength: event.data?.length ?? 0,
+          })
 
           const result = JSON.parse(event.data)
           const { type, base_resp, statusInfo, data: _data } = result
@@ -1171,7 +1169,7 @@ export class MiniMaxStreamHandler {
             )
             content += chunk
 
-            console.log('[MiniMax] Stream chunk:', chunk.substring(0, 50), 'isEnd:', isEnd)
+            console.log('[MiniMax] Stream chunk metadata:', { length: chunk.length, isEnd })
 
             // Process tool call interception
             const baseChunk = createBaseChunk(this.chatId, this.model, this.created)
@@ -1222,7 +1220,7 @@ export class MiniMaxStreamHandler {
     stream.on('data', (chunk: Buffer) => {
       hasReceivedData = true
       const chunkStr = chunk.toString()
-      console.log('[MiniMax] Raw chunk:', chunkStr.substring(0, 200))
+      console.log('[MiniMax] Raw chunk bytes:', chunk.length)
 
       // Try to parse as SSE first
       if (chunkStr.includes('event:') || chunkStr.includes('data:')) {
@@ -1291,7 +1289,7 @@ export class MiniMaxStreamHandler {
               )
               content += chunk
 
-              console.log('[MiniMax] Stream chunk:', chunk.substring(0, 50), 'isEnd:', isEnd)
+              console.log('[MiniMax] Stream chunk metadata:', { length: chunk.length, isEnd })
 
               transStream.write(
                 `data: ${JSON.stringify({
@@ -1358,7 +1356,6 @@ export class MiniMaxStreamHandler {
           }, 
           finish_reason: 'stop' 
         }],
-        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
         created: this.created,
       }
 

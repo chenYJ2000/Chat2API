@@ -181,7 +181,7 @@ test('forced function choice narrows allowed tool names to the selected function
   assert.deepEqual(result.plan.tools.map((tool) => tool.name), ['default_api:list_dir'])
 })
 
-test('non-stream parsing only accepts the selected provider protocol', () => {
+test('non-stream parsing safely falls back to another supported protocol', () => {
   const engine = new ToolCallingEngine()
   const transformed = engine.transformRequest({
     request: request(),
@@ -200,8 +200,104 @@ test('non-stream parsing only accepts the selected provider protocol', () => {
 
   engine.applyNonStreamResponse(result, transformed.plan)
 
-  assert.equal(result.choices[0].message.tool_calls, undefined)
-  assert.equal(result.choices[0].message.content, '[function_calls][call:default_api:read_file]{"filePath":"/tmp/a"}[/call][/function_calls]')
+  assert.equal(result.choices[0].message.tool_calls.length, 1)
+  assert.equal(result.choices[0].message.tool_calls[0].function.arguments, '{"filePath":"/tmp/a"}')
+  assert.equal(transformed.plan.diagnostics.parserFormat, 'managed_bracket')
+})
+
+test('non-stream parsing accepts OpenAI tool_calls JSON emitted as content', () => {
+  const engine = new ToolCallingEngine()
+  const transformed = engine.transformRequest({
+    request: request({ tool_choice: 'required' }),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: JSON.stringify({
+          tool_calls: [{
+            id: 'call_json',
+            type: 'function',
+            function: {
+              name: 'default_api:read_file',
+              arguments: { filePath: '/tmp/json' },
+            },
+          }],
+        }),
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  engine.applyNonStreamResponse(result, transformed.plan)
+
+  assert.equal(result.choices[0].message.tool_calls[0].id, 'call_json')
+  assert.equal(result.choices[0].message.tool_calls[0].function.arguments, '{"filePath":"/tmp/json"}')
+  assert.equal(transformed.plan.diagnostics.parserFormat, 'openai_chat')
+})
+
+test('OpenAI tool_calls JSON is autodetected inside fenced prose', () => {
+  const engine = new ToolCallingEngine()
+  const transformed = engine.transformRequest({
+    request: request({ tool_choice: 'required' }),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: 'Final call:\n```json\n' + JSON.stringify({
+          tool_calls: [{
+            id: 'call_embedded',
+            type: 'function',
+            function: {
+              name: 'default_api:read_file',
+              arguments: { filePath: '/tmp/embedded' },
+            },
+          }],
+        }) + '\n```',
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  engine.applyNonStreamResponse(result, transformed.plan)
+
+  assert.equal(result.choices[0].message.tool_calls[0].id, 'call_embedded')
+  assert.equal(result.choices[0].message.tool_calls[0].function.arguments, '{"filePath":"/tmp/embedded"}')
+  assert.equal(transformed.plan.diagnostics.parserFormat, 'openai_chat')
+})
+
+test('malformed OpenAI JSON naming a legal tool is repairable invalid arguments', () => {
+  const engine = new ToolCallingEngine({ diagnosticsEnabled: true })
+  const transformed = engine.transformRequest({
+    request: request({ tool_choice: 'required' }),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: '{"tool_calls":[{"function":{"name":"default_api:read_file","arguments":',
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  assert.throws(
+    () => engine.applyNonStreamResponse(result, transformed.plan),
+    (error: unknown) => (
+      error instanceof ToolCallingResponseError
+      && error.code === 'invalid_arguments'
+      && error.toolName === 'default_api:read_file'
+      && error.repairable
+      && error.diagnostics?.parserFormat === 'openai_chat'
+    ),
+  )
 })
 
 test('managed tool parsing strips internal raw protocol metadata from the public response', () => {
@@ -246,7 +342,40 @@ test('required tool choice rejects a plain text upstream response', () => {
 
   assert.throws(
     () => engine.applyNonStreamResponse(result, transformed.plan),
-    (error: unknown) => error instanceof ToolCallingResponseError && error.status === 502,
+    (error: unknown) => (
+      error instanceof ToolCallingResponseError
+      && error.status === 502
+      && error.diagnostics?.protocol === 'managed_xml'
+      && error.diagnostics.rawContentPreview === 'I will not call a tool.'
+    ),
+  )
+})
+
+test('required-call failure retains reasoning only for bounded-repair response merge', () => {
+  const engine = new ToolCallingEngine()
+  const transformed = engine.transformRequest({
+    request: request({ tool_choice: 'required', reasoning_effort: 'enabled' }),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: 'plain text instead',
+        reasoning_content: 'private first-attempt reasoning',
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  assert.throws(
+    () => engine.applyNonStreamResponse(result, transformed.plan),
+    (error: unknown) => (
+      error instanceof ToolCallingResponseError
+      && error.reasoningContent === 'private first-attempt reasoning'
+      && !JSON.stringify(error.diagnostics).includes('private first-attempt reasoning')
+    ),
   )
 })
 
@@ -273,6 +402,63 @@ test('required tool choice accepts an already-native tool call', () => {
   }
 
   assert.doesNotThrow(() => engine.applyNonStreamResponse(result, transformed.plan))
+})
+
+test('native tool_calls are preferred and validated even when content is also a string', () => {
+  const engine = new ToolCallingEngine()
+  const transformed = engine.transformRequest({
+    request: request({ tool_choice: 'required' }),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: 'final answer metadata',
+        tool_calls: [{
+          id: 'call_native_with_content',
+          type: 'function',
+          function: { name: 'default_api:read_file', arguments: '{"filePath":"/tmp/a"}' },
+        }],
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  engine.applyNonStreamResponse(result, transformed.plan)
+
+  assert.equal(result.choices[0].message.tool_calls.length, 1)
+  assert.equal(result.choices[0].finish_reason, 'tool_calls')
+})
+
+test('empty invoke for a legal tool is classified as repairable invalid arguments', () => {
+  const engine = new ToolCallingEngine({ diagnosticsEnabled: true })
+  const transformed = engine.transformRequest({
+    request: request({ tool_choice: 'required' }),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: '<tool_calls><invoke name="default_api:read_file"></invoke></tool_calls>',
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  assert.throws(
+    () => engine.applyNonStreamResponse(result, transformed.plan),
+    (error: unknown) => (
+      error instanceof ToolCallingResponseError
+      && error.code === 'invalid_arguments'
+      && error.repairable
+      && error.toolName === 'default_api:read_file'
+      && error.diagnostics?.parserFormat === 'managed_xml'
+    ),
+  )
 })
 
 test('tool response validation accepts arguments that fully match the declared schema', () => {
@@ -351,6 +537,75 @@ test('tool response validation rejects missing, mistyped, enum, and extra argume
   )
 })
 
+test('schema type failures retain exact JSON Pointer, expected type, actual type, and rejected arguments', () => {
+  const ladderTool = {
+    type: 'function' as const,
+    function: {
+      name: 'signal_entry_short',
+      parameters: {
+        type: 'object',
+        properties: {
+          pair: { type: 'string' },
+          take_profit_ladder: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                pct: { type: 'number' },
+                close_pct: { type: 'number' },
+              },
+              required: ['pct', 'close_pct'],
+            },
+          },
+        },
+        required: ['pair', 'take_profit_ladder'],
+      },
+    },
+  }
+  const engine = new ToolCallingEngine({ diagnosticsEnabled: true })
+  const transformed = engine.transformRequest({
+    request: request({ tools: [ladderTool], tool_choice: 'required' }),
+    provider,
+    actualModel: 'glm-5.2',
+  })
+  const rejectedArguments = JSON.stringify({
+    pair: 'SKHYNIX/USDT:USDT',
+    take_profit_ladder: '{"pct":0.015},{"pct":0.03}',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'call_short',
+          type: 'function',
+          function: { name: 'signal_entry_short', arguments: rejectedArguments },
+        }],
+      },
+      finish_reason: 'tool_calls',
+    }],
+  }
+
+  assert.throws(
+    () => engine.applyNonStreamResponse(result, transformed.plan),
+    (error: unknown) => {
+      if (!(error instanceof ToolCallingResponseError)) return false
+      assert.deepEqual(error.validationIssues, [{
+        jsonPointer: '/take_profit_ladder',
+        keyword: 'type',
+        message: 'must be array',
+        expected: 'array',
+        actualType: 'string',
+      }])
+      assert.equal(error.rejectedArguments, rejectedArguments)
+      assert.match(error.message, /expected array, actual string/)
+      assert.deepEqual(error.diagnostics?.schemaValidationIssues, error.validationIssues)
+      return true
+    },
+  )
+})
+
 test('tool response validation rejects leaked managed protocol markers', () => {
   const engine = new ToolCallingEngine()
   const transformed = engine.transformRequest({
@@ -386,6 +641,107 @@ test('tool response validation rejects leaked managed protocol markers', () => {
     () => engine.applyNonStreamResponse(result, transformed.plan),
     /arguments contain internal protocol markers/,
   )
+})
+
+test('tool response validation rejects leaked standard XML parameter markers', () => {
+  const engine = new ToolCallingEngine()
+  const transformed = engine.transformRequest({
+    request: request({ tools: [strictDecisionTool], tool_choice: 'required' }),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'call_wait_leaked_xml',
+          type: 'function',
+          function: {
+            name: 'signal_wait',
+            arguments: JSON.stringify({
+              pair: 'MSFT/USDT:USDT',
+              confidence_score: 61,
+              cancel_pending_trigger: false,
+              lean_direction: 'neutral',
+              reason: 'stale </parameter> evidence',
+            }),
+          },
+        }],
+      },
+      finish_reason: 'tool_calls',
+    }],
+  }
+
+  assert.throws(
+    () => engine.applyNonStreamResponse(result, transformed.plan),
+    /arguments contain internal protocol markers/,
+  )
+})
+
+test('diagnostics mode reports protocol, fences, redacted raw output, parsed arguments, and schema errors', () => {
+  const engine = new ToolCallingEngine({ diagnosticsEnabled: true })
+  const transformed = engine.transformRequest({
+    request: request({ tools: [strictDecisionTool], tool_choice: 'required' }),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: '```xml\n<tool_calls><invoke name="signal_wait"><arguments>{"pair":"MSFT/USDT:USDT","api_key":"do-not-log"}</arguments></invoke></tool_calls>\n```',
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  assert.throws(
+    () => engine.applyNonStreamResponse(result, transformed.plan),
+    (error: unknown) => {
+      if (!(error instanceof ToolCallingResponseError)) return false
+      assert.equal(error.diagnostics?.parserFormat, 'managed_xml')
+      assert.equal(error.diagnostics?.fencedBlockDetected, true)
+      assert.match(error.diagnostics?.rawContentPreview || '', /\[REDACTED\]/)
+      assert.equal(error.diagnostics?.rawContentPreview?.includes('do-not-log'), false)
+      assert.equal(error.diagnostics?.parsedArgumentsPreview?.[0].name, 'signal_wait')
+      assert.ok((error.diagnostics?.schemaValidationErrors?.length ?? 0) > 0)
+      return true
+    },
+  )
+})
+
+test('reasoning content is never parsed into function arguments', () => {
+  const engine = new ToolCallingEngine()
+  const transformed = engine.transformRequest({
+    request: request({ tools: [strictDecisionTool], tool_choice: 'required' }),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const args = {
+    pair: 'MSFT/USDT:USDT',
+    confidence_score: 61,
+    cancel_pending_trigger: false,
+    lean_direction: 'neutral',
+    reason: 'Evidence is stale',
+  }
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        reasoning_content: '<tool_calls><invoke name="signal_wait">draft</invoke></tool_calls>',
+        content: `<tool_calls><invoke name="signal_wait">${JSON.stringify(args)}</invoke></tool_calls>`,
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  engine.applyNonStreamResponse(result, transformed.plan)
+
+  const argumentsText = result.choices[0].message.tool_calls[0].function.arguments
+  assert.deepEqual(JSON.parse(argumentsText), args)
+  assert.equal(argumentsText.includes('draft'), false)
 })
 
 test('invalid client tool schemas fail with HTTP 400 semantics before forwarding', () => {

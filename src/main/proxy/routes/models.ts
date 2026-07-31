@@ -8,7 +8,7 @@ import type { Context } from 'koa'
 import { ModelsResponse, ModelInfo } from '../types'
 import { loadBalancer } from '../loadbalancer'
 import { storeManager } from '../../store/store'
-import { modelMapper } from '../modelMapper'
+import { getModelDeprecation } from '../modelDeprecations'
 
 const router = new Router({ prefix: '/v1' })
 
@@ -30,7 +30,10 @@ router.get('/models', async (ctx: Context) => {
 
     const effectiveModels = storeManager.getEffectiveModels(provider.id)
     for (const model of effectiveModels) {
-      if (!addedModels.has(model.displayName)) {
+      if (
+        !addedModels.has(model.displayName)
+        && loadBalancer.getAvailableAccountCount(model.displayName, provider.id) > 0
+      ) {
         addedModels.add(model.displayName)
         models.push({
           id: model.displayName,
@@ -45,7 +48,10 @@ router.get('/models', async (ctx: Context) => {
   const config = storeManager.getConfig()
   const mappings = config.modelMappings || {}
   for (const [requestModel, mapping] of Object.entries(mappings)) {
-    if (!addedModels.has(requestModel)) {
+    if (
+      !addedModels.has(requestModel)
+      && loadBalancer.getAvailableAccountCount(requestModel, mapping.preferredProviderId) > 0
+    ) {
       addedModels.add(requestModel)
       models.push({
         id: requestModel,
@@ -74,6 +80,19 @@ router.get('/models/:model', async (ctx: Context) => {
   const config = storeManager.getConfig()
   const mappings = config.modelMappings || {}
   if (mappings[modelId]) {
+    const mapping = mappings[modelId]
+    if (loadBalancer.getAvailableAccountCount(modelId, mapping.preferredProviderId) === 0) {
+      ctx.status = 503
+      ctx.body = {
+        error: {
+          message: `No healthy account is available for model '${modelId}'`,
+          type: 'service_unavailable_error',
+          param: 'model',
+          code: 'no_available_account',
+        },
+      }
+      return
+    }
     ctx.set('Content-Type', 'application/json')
     ctx.body = {
       id: modelId,
@@ -104,7 +123,7 @@ router.get('/models/:model', async (ctx: Context) => {
       return normalizedSupported === normalizedModelId
     })
 
-    if (found) {
+    if (found && loadBalancer.getAvailableAccountCount(modelId, provider.id) > 0) {
       ctx.set('Content-Type', 'application/json')
       ctx.body = {
         id: modelId,
@@ -116,13 +135,21 @@ router.get('/models/:model', async (ctx: Context) => {
     }
   }
 
-  ctx.status = 404
+  const deprecation = getModelDeprecation(modelId)
+  ctx.status = deprecation ? 410 : 404
   ctx.body = {
     error: {
-      message: `Model '${modelId}' not found`,
+      message: deprecation?.message || `Model '${modelId}' not found`,
       type: 'invalid_request_error',
       param: 'model',
-      code: 'model_not_found',
+      code: deprecation ? 'model_deprecated' : 'model_not_found',
+      ...(deprecation ? {
+        details: {
+          deprecated_model: deprecation.model,
+          suggested_replacement: deprecation.replacement,
+          requires_explicit_mapping: true,
+        },
+      } : {}),
     },
   }
 })

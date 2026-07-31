@@ -180,7 +180,7 @@ export class ProviderChecker {
 
   private static async checkDeepSeekToken(token: string): Promise<TokenCheckResult> {
     try {
-      console.log('[DeepSeek] Validating Token:', token.substring(0, 20) + '...')
+      console.log('[DeepSeek] Validating configured token')
       
       const response = await axios.get(
         'https://chat.deepseek.com/api/v0/users/current',
@@ -198,7 +198,6 @@ export class ProviderChecker {
       )
       
       console.log('[DeepSeek] Response status:', response.status)
-      console.log('[DeepSeek] Response data:', JSON.stringify(response.data, null, 2))
       
       // Response format: { code: 0, data: { biz_data: { ... } } }
       if (response.status === 200 && response.data?.code === 0 && response.data?.data?.biz_data) {
@@ -216,9 +215,12 @@ export class ProviderChecker {
         return { valid: false, error: 'Token expired or invalid' }
       }
       
-      return { valid: false, error: `Validation failed: ${response.data?.msg || response.data?.message || JSON.stringify(response.data)}` }
+      return {
+        valid: false,
+        error: `Validation failed: ${response.data?.msg || response.data?.message || `HTTP ${response.status}`}`,
+      }
     } catch (error) {
-      console.error('[DeepSeek] Validation error:', error)
+      console.error('[DeepSeek] Validation error:', error instanceof Error ? error.message : 'Unknown error')
       return {
         valid: false,
         error: error instanceof AxiosError 
@@ -230,7 +232,7 @@ export class ProviderChecker {
 
   private static async checkGLMToken(refreshToken: string): Promise<TokenCheckResult> {
     try {
-      console.log('[GLM] Validating Token:', refreshToken.substring(0, 20) + '...')
+      console.log('[GLM] Validating configured refresh token')
       
       const sign = await this.generateGLMSignV2()
       
@@ -275,7 +277,6 @@ export class ProviderChecker {
       )
       
       console.log('[GLM] Response status:', response.status)
-      console.log('[GLM] Response data:', JSON.stringify(response.data, null, 2))
       
       if (response.status === 200 && response.data?.result?.access_token) {
         return {
@@ -290,9 +291,12 @@ export class ProviderChecker {
         return { valid: false, error: 'Token expired or invalid' }
       }
       
-      return { valid: false, error: `Validation failed: ${response.data?.message || response.data?.msg || JSON.stringify(response.data)}` }
+      return {
+        valid: false,
+        error: `Validation failed: ${response.data?.message || response.data?.msg || `HTTP ${response.status}`}`,
+      }
     } catch (error) {
-      console.error('[GLM] Validation error:', error)
+      console.error('[GLM] Validation error:', error instanceof Error ? error.message : 'Unknown error')
       return {
         valid: false,
         error: error instanceof AxiosError 
@@ -326,7 +330,7 @@ export class ProviderChecker {
 
   private static async checkKimiToken(token: string): Promise<TokenCheckResult> {
     try {
-      console.log('[Kimi] Validating Token:', token.substring(0, 20) + '...')
+      console.log('[Kimi] Validating configured token')
       
       const response = await axios.post(
         'https://www.kimi.com/apiv2/kimi.gateway.order.v1.SubscriptionService/GetSubscription',
@@ -346,7 +350,6 @@ export class ProviderChecker {
       )
       
       console.log('[Kimi] Response status:', response.status)
-      console.log('[Kimi] Response data:', JSON.stringify(response.data, null, 2))
       
       if (response.status === 200 && response.data?.subscription) {
         return {
@@ -359,7 +362,7 @@ export class ProviderChecker {
       
       return { valid: false, error: 'Token expired or invalid' }
     } catch (error) {
-      console.error('[Kimi] Validation error:', error)
+      console.error('[Kimi] Validation error:', error instanceof Error ? error.message : 'Unknown error')
       return {
         valid: false,
         error: error instanceof AxiosError 
@@ -374,7 +377,7 @@ export class ProviderChecker {
     token: string
   ): Promise<TokenCheckResult> {
     try {
-      console.log('[MiniMax] Validating Token:', token.substring(0, 30) + '...')
+      console.log('[MiniMax] Validating configured token')
       
       const crypto = await import('crypto')
       
@@ -398,10 +401,10 @@ export class ProviderChecker {
             const decoded = Buffer.from(payload, 'base64').toString('utf8')
             const data = JSON.parse(decoded)
             realUserID = data.user?.id || data.id || data.sub || ''
-            console.log('[MiniMax] Extracted userId from token:', realUserID)
+            console.log('[MiniMax] Extracted userId from token')
           }
         } catch (e) {
-          console.log('[MiniMax] Failed to parse JWT:', e)
+          console.log('[MiniMax] Failed to parse JWT:', e instanceof Error ? e.message : 'Unknown error')
         }
       }
       
@@ -459,7 +462,6 @@ export class ProviderChecker {
       )
       
       console.log('[MiniMax] Response status:', response.status)
-      console.log('[MiniMax] Response data:', JSON.stringify(response.data, null, 2))
       
       if (response.status === 200 && response.data?.data?.deviceIDStr) {
         const userInfo = response.data.data.userInfo
@@ -478,7 +480,7 @@ export class ProviderChecker {
       
       return { valid: false, error: `Validation failed: ${response.data?.statusInfo?.message || 'Unknown error'}` }
     } catch (error) {
-      console.error('[MiniMax] Validation error:', error)
+      console.error('[MiniMax] Validation error:', error instanceof Error ? error.message : 'Unknown error')
       return {
         valid: false,
         error: error instanceof AxiosError 
