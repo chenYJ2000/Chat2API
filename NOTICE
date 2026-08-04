@@ -20,9 +20,9 @@ FluxMeld exists because Chat2API was made available as open source. We
 sincerely thank xiaoY233 and every Chat2API contributor for the original
 project, its engineering work, and the community effort behind it.
 
-This repository also retains the history of the intermediate Chat2API fork at
-https://github.com/chenYJ2000/Chat2API. Its change record remains available in
-FORK_CHANGES.md for provenance.
+This repository also retains the history of the intermediate upstream-derived
+fork. Its technical change record remains available in FORK_CHANGES.md for
+provenance.
 
 FluxMeld-specific modifications are copyright their respective contributors.
 The original copyright notices, attribution, and GPL-3.0 terms are retained.

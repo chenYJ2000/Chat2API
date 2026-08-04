@@ -6,6 +6,14 @@
   "author": {
     "name": "FluxMeld Contributors"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenYJ2000/FluxMeld.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chenYJ2000/FluxMeld/issues"
+  },
+  "homepage": "https://github.com/chenYJ2000/FluxMeld#readme",
   "contributors": [
     {
       "name": "xiaoY233 and the upstream Chat2API contributors",

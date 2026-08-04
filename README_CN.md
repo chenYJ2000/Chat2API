@@ -43,7 +43,7 @@ FluxMeld 不是模型服务商，也不是所列服务商的官方 API。服务�
 3. **连接客户端**：让支持 OpenAI 接口的工具指向本地中继。
 4. **观察与优化**：通过仪表盘、日志、账户健康度、模型映射和工具调用诊断了解实际执行情况。
 
-FluxMeld 的数据目录是 ~/.fluxmeld/，不会读取或覆盖 Chat2API 安装产生的数据。
+FluxMeld 的数据目录是 ~/.fluxmeld/，不会读取或覆盖旧应用安装产生的数据。
 
 ## 主要能力
 
@@ -57,6 +57,23 @@ FluxMeld 的数据目录是 ~/.fluxmeld/，不会读取或覆盖 Chat2API 安装
   响应解析、JSON Schema 校验和有界修复。
 - **可见的本地运营**：通过仪表盘、供应商状态、会话控制与脱敏请求日志进行排障。
 - **桌面端优先**：支持 macOS、Windows、Linux，以及浅色和深色主题。
+
+## 当前内置服务商
+
+下表反映当前版本随应用提供的默认模型。服务商网页访问状态可能独立于 FluxMeld
+版本变化。
+
+| Provider | 当前默认模型或状态 |
+| --- | --- |
+| DeepSeek | deepseek-v4-flash, deepseek-v4-pro |
+| GLM | GLM-5.2 |
+| Kimi | Kimi-K3 |
+| MiniMax | MiniMax-M2.7 |
+| Mimo | MiMo-V2.5-Pro, MiMo-V2.5, MiMo-V2-Flash |
+| Perplexity | Auto |
+| Qwen | Qwen3.6, Qwen3.7-Max, Qwen3.5-Flash, Qwen3-Max, Qwen3-Max-Thinking-Preview, Qwen3-Coder |
+| Qwen AI | Qwen3.7-Max, Qwen3.6-Plus, Qwen3.6-35B-A3B, Qwen3.6-27B, Qwen3-Coder |
+| Z.ai | 受前端验证码风控限制，暂不可用 |
 
 服务商适配细节见 [docs/providers](docs/providers/README.md)。
 

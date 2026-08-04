@@ -51,7 +51,7 @@ change without notice.
    mappings, and tool-calling diagnostics to understand what actually ran.
 
 The application stores its own working data under ~/.fluxmeld/ so it does not
-reuse or overwrite a Chat2API installation's data.
+reuse or overwrite a predecessor application's data.
 
 ## Highlights
 
@@ -68,6 +68,23 @@ reuse or overwrite a Chat2API installation's data.
   session controls, and redacted request logs.
 - **Desktop-first setup** on macOS, Windows, and Linux with light and dark
   themes.
+
+## Current bundled providers
+
+The table below reflects the defaults shipped with this revision. Provider web
+access can change independently of FluxMeld releases.
+
+| Provider | Current default models or status |
+| --- | --- |
+| DeepSeek | deepseek-v4-flash, deepseek-v4-pro |
+| GLM | GLM-5.2 |
+| Kimi | Kimi-K3 |
+| MiniMax | MiniMax-M2.7 |
+| Mimo | MiMo-V2.5-Pro, MiMo-V2.5, MiMo-V2-Flash |
+| Perplexity | Auto |
+| Qwen | Qwen3.6, Qwen3.7-Max, Qwen3.5-Flash, Qwen3-Max, Qwen3-Max-Thinking-Preview, Qwen3-Coder |
+| Qwen AI | Qwen3.7-Max, Qwen3.6-Plus, Qwen3.6-35B-A3B, Qwen3.6-27B, Qwen3-Coder |
+| Z.ai | Temporarily unavailable due to frontend captcha risk control |
 
 See [docs/providers](docs/providers/README.md) for adapter notes and provider
 specific guidance.

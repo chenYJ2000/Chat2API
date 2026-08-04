@@ -1,11 +1,11 @@
-# Fork changes / 衍生版本变更
+# Upstream-derived change history / 上游衍生变更记录
 
-This document records the changes maintained by this fork relative to
+This historical document records the changes maintained by this project relative to
 [`xiaoY233/Chat2API`](https://github.com/xiaoY233/Chat2API) `main` at commit
 `59f03ab` (2026-05-28). The original Git history, copyright notice, and
 GPL-3.0 license are retained.
 
-本文记录本衍生版本相对于原项目
+本文记录本项目相对于原项目
 [`xiaoY233/Chat2API`](https://github.com/xiaoY233/Chat2API) `main` 分支提交
 `59f03ab`（2026-05-28）的全部主要改动。仓库保留原始 Git 历史、版权声明与
 GPL-3.0 许可证。
@@ -43,7 +43,7 @@ GPL-3.0 许可证。
 
 - 新增 AJV 与 `ajv-formats`，对客户端声明的完整 JSON Schema 和模型返回参数做校验。
 - 客户端 schema 在请求上游之前编译；非法 schema 返回 HTTP 400。
-- 每个模型 tool call 都会验证：工具名在允许清单、arguments 是 JSON 字符串、可解析为普通对象、符合完整 schema、且不含 Chat2API 内部协议标记。
+- 每个模型 tool call 都会验证：工具名在允许清单、arguments 是 JSON 字符串、可解析为普通对象、符合完整 schema、且不含上游遗留协议标记。
 - 不做类型强转、不自动填默认值、不删除额外字段；`required`、类型、枚举、范围、格式、`additionalProperties` 等规则按 schema 执行。
 - 模型缺少必填工具、返回非法工具名或非法参数时返回 HTTP 502，不再把错误参数作为成功调用交给业务系统。
 - `tool_choice: required` 和强制指定函数都会严格执行；原生 tool calls 与提示词解析得到的 tool calls 使用同一套校验。
@@ -89,7 +89,7 @@ GPL-3.0 许可证。
 
 ### 8. 已知限制与推荐用法
 
-- Chat2API 驱动的是供应商 Web 接口，不是供应商承诺稳定的官方 OpenAI API；网页协议、反爬字段和可用模型可能随时变化。
+- FluxMeld 驱动的是供应商 Web 接口，不是供应商承诺稳定的官方 OpenAI API；网页协议、反爬字段和可用模型可能随时变化。
 - Qwen3.7-Max 快速模式的模型输出本身仍可能漏工具或生成错误参数。网关现在会安全返回 502，而不是放行危险调用，但无法让模型本身变得确定。
 - 本地抽样中 Qwen3.6-Plus 快速模式的工具调用稳定性高于 Qwen3.7-Max 快速模式；复杂复核任务建议使用 Max thinking，直接执行工具优先使用 Qwen3.6-Plus fast。
 - Qwen token 限制依赖上游 usage 检查点，因此不是逐 token 的硬截断。
