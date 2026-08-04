@@ -9,7 +9,8 @@ import { PassThrough } from 'stream'
 import { createParser } from 'eventsource-parser'
 import type { Account, Provider } from '../../store/types'
 import { hasToolUse, parseToolUse } from '../promptToolUse'
-import { getProviderToolProfile } from '../toolCalling/providerProfiles'
+import { getToolProtocol } from '../toolCalling/protocols'
+import type { ToolProtocolId } from '../toolCalling/types'
 
 const QWEN_AI_BASE = 'https://chat.qwen.ai'
 const QWEN_AI_WEB_VERSION = '0.2.35'
@@ -122,6 +123,7 @@ interface ChatCompletionRequest {
   reasoning_effort?: string | boolean
   max_tokens?: number
   max_completion_tokens?: number
+  toolProtocol?: ToolProtocolId
   chatId?: string
 }
 
@@ -282,8 +284,11 @@ function extractTextContent(content: QwenAiMessage['content']): string {
   return ''
 }
 
-export function buildQwenAiPrompt(messages: QwenAiMessage[]): string {
-  const toolProfile = getProviderToolProfile('qwen')
+export function buildQwenAiPrompt(
+  messages: QwenAiMessage[],
+  toolProtocol: ToolProtocolId = 'managed_xml',
+): string {
+  const protocol = getToolProtocol(toolProtocol)
   const systemParts: string[] = []
   const conversationParts: string[] = []
 
@@ -295,7 +300,7 @@ export function buildQwenAiPrompt(messages: QwenAiMessage[]): string {
     } else if (message.role === 'user') {
       if (text) conversationParts.push(`User: ${text}`)
     } else if (message.role === 'assistant' && message.tool_calls?.length) {
-      conversationParts.push(toolProfile.formatAssistantToolCalls(
+      conversationParts.push(protocol.formatAssistantToolCalls(
         message.tool_calls.map(toolCall => ({
           id: toolCall.id,
           name: toolCall.function.name,
@@ -305,7 +310,7 @@ export function buildQwenAiPrompt(messages: QwenAiMessage[]): string {
     } else if (message.role === 'assistant') {
       if (text) conversationParts.push(`Assistant: ${text}`)
     } else if (message.role === 'tool' && message.tool_call_id) {
-      conversationParts.push(toolProfile.formatToolResult({
+      conversationParts.push(protocol.formatToolResult({
         toolCallId: message.tool_call_id,
         content: text,
       }))
@@ -514,7 +519,7 @@ export class QwenAiAdapter {
     // The Qwen web endpoint accepts one user message. Preserve the complete
     // OpenAI conversation inside it, including assistant tool calls and tool
     // validation results needed for correction turns.
-    const userContent = buildQwenAiPrompt(request.messages)
+    const userContent = buildQwenAiPrompt(request.messages, request.toolProtocol)
 
     const fid = uuid()
     const childId = uuid()

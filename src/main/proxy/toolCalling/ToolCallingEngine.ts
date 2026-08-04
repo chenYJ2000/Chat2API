@@ -10,7 +10,10 @@ import {
 import { getToolProtocol } from './protocols/index.ts'
 import { hasFencedCodeBlock } from './protocols/shared.ts'
 import { parseToolCallContent } from './responseParser.ts'
-import { getToolClientAdapter } from './clientAdapters/index.ts'
+import {
+  getToolClientAdapter,
+  resolveToolClientAdapterForRequest,
+} from './clientAdapters/index.ts'
 import { buildToolCallingRuntimePlan } from './runtimePlan.ts'
 import type {
   JsonRuntimeType,
@@ -108,8 +111,19 @@ export class ToolCallingEngine {
     requestId?: string
   }): ToolCallingTransformResult {
     const { request, provider, actualModel, requestId } = input
-    const adapter = getToolClientAdapter(this.config.clientAdapterId)
-    const clientRequest = adapter.normalizeRequest(request)
+    const adapterResolution = resolveToolClientAdapterForRequest(this.config.clientAdapterId, request)
+    const adapter = adapterResolution.adapter
+    const normalizedClientRequest = adapter.normalizeRequest(request)
+    const clientRequest = adapterResolution.resolvedBy === 'request_identity'
+      ? {
+          ...normalizedClientRequest,
+          diagnostics: {
+            ...normalizedClientRequest.diagnostics,
+            configuredClientAdapterId: adapterResolution.configuredClientAdapterId,
+            clientAdapterResolution: adapterResolution.resolvedBy,
+          },
+        }
+      : normalizedClientRequest
     const plan = buildToolCallingRuntimePlan({
       requestId,
       providerId: provider.id,

@@ -29,6 +29,19 @@ test('a user-configured timeout above the OpenCode minimum is preserved', () => 
   )
 })
 
+test('a canonical OpenCode request gets the tool deadline even with the standard profile configured', () => {
+  assert.equal(
+    getEffectiveRequestTimeout({
+      ...toolRequest,
+      messages: [{
+        role: 'system',
+        content: 'You are opencode, an interactive CLI tool that helps users with software engineering tasks.',
+      }],
+    }, 'standard-openai-tools', 60_000),
+    180_000,
+  )
+})
+
 test('other clients and requests without tools retain the configured deadline', () => {
   assert.equal(
     getEffectiveRequestTimeout(toolRequest, 'standard-openai-tools', 60_000),

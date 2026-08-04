@@ -19,6 +19,8 @@ export interface NormalizedClientToolRequest {
   diagnostics: {
     requestedClientAdapterId?: string
     fallbackClientAdapterId?: string
+    configuredClientAdapterId?: string
+    clientAdapterResolution?: 'configuration' | 'request_identity'
     detectedClientType?: string
     rawToolCount: number
     normalizedToolNames: string[]

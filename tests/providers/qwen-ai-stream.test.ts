@@ -233,6 +233,31 @@ test('Qwen AI preserves assistant tool calls and tool validation feedback', () =
   assert.match(prompt, /confidence is required/)
 })
 
+test('Qwen AI keeps tool history in the selected bracket protocol', () => {
+  const prompt = buildQwenAiPrompt([
+    { role: 'system', content: 'Use the supplied tools.' },
+    { role: 'user', content: 'Inspect the project.' },
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [{
+        id: 'call_0',
+        function: { name: 'glob', arguments: '{"pattern":"**/*"}' },
+      }],
+    },
+    {
+      role: 'tool',
+      tool_call_id: 'call_0',
+      content: 'src/main/index.ts',
+    },
+  ], 'managed_bracket')
+
+  assert.match(prompt, /\[function_calls\]/)
+  assert.match(prompt, /\[call:glob\]/)
+  assert.match(prompt, /\[TOOL_RESULT for call_0\]/)
+  assert.doesNotMatch(prompt, /<\|FLUXMELD\|tool_calls>/)
+})
+
 test('Qwen AI resolves fast mode without leaking a truthy disabled effort', () => {
   const settings = resolveQwenAiGenerationSettings({
     reasoning_effort: 'none',

@@ -49,6 +49,8 @@ export function buildToolCallingRuntimePlan(input: {
     diagnostics: {
       requestId: input.requestId,
       clientAdapterId: input.clientRequest.clientAdapterId,
+      configuredClientAdapterId: input.clientRequest.diagnostics.configuredClientAdapterId,
+      clientAdapterResolution: input.clientRequest.diagnostics.clientAdapterResolution,
       providerId: input.providerId,
       model: input.model,
       actualModel: input.actualModel,

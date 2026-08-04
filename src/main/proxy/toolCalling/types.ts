@@ -57,6 +57,8 @@ export interface NormalizedToolResult {
 export interface ToolCallDiagnostics {
   requestId?: string
   clientAdapterId: string
+  configuredClientAdapterId?: string
+  clientAdapterResolution?: 'configuration' | 'request_identity'
   detectedClientType?: string
   providerId: string
   model?: string

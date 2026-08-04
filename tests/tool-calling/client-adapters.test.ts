@@ -1,7 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { getToolClientAdapter } from '../../src/main/proxy/toolCalling/clientAdapters/index.ts'
+import {
+  getToolClientAdapter,
+  hasOpenCodeSystemIdentity,
+  resolveToolClientAdapterForRequest,
+} from '../../src/main/proxy/toolCalling/clientAdapters/index.ts'
 import type { ChatCompletionRequest } from '../../src/main/proxy/types.ts'
 
 function request(overrides: Partial<ChatCompletionRequest> = {}): ChatCompletionRequest {
@@ -33,6 +37,30 @@ test('standard OpenAI adapter normalizes OpenAI tools and tool_choice', () => {
   assert.equal(result.toolSource, 'openai')
   assert.deepEqual(result.tools.map((tool) => tool.name), ['weather-test:get_weather'])
   assert.equal(result.toolChoice.mode, 'auto')
+})
+
+test('an unambiguous OpenCode system identity selects its compatibility adapter', () => {
+  const openCodeRequest = request({
+    messages: [
+      { role: 'system', content: 'You are opencode, an interactive CLI tool that helps users with software engineering tasks.' },
+      { role: 'user', content: '阅读当前项目。' },
+    ],
+  })
+
+  const resolved = resolveToolClientAdapterForRequest('standard-openai-tools', openCodeRequest)
+
+  assert.equal(hasOpenCodeSystemIdentity(openCodeRequest.messages), true)
+  assert.equal(resolved.adapter.id, 'opencode')
+  assert.equal(resolved.resolvedBy, 'request_identity')
+  assert.equal(resolved.configuredClientAdapterId, 'standard-openai-tools')
+  assert.equal(
+    resolveToolClientAdapterForRequest('standard-openai-tools', request()).adapter.id,
+    'standard-openai-tools',
+  )
+  assert.equal(
+    resolveToolClientAdapterForRequest('cherry-studio-mcp', openCodeRequest).adapter.id,
+    'cherry-studio-mcp',
+  )
 })
 
 test('standard OpenAI adapter detects an exact refusal for a declared tool', () => {

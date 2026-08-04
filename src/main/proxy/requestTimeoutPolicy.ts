@@ -1,4 +1,5 @@
 import type { ChatCompletionRequest } from './types'
+import { resolveToolClientAdapterForRequest } from './toolCalling/clientAdapters'
 
 const OPENCODE_TOOL_REQUEST_MIN_TIMEOUT_MS = 180_000
 
@@ -15,7 +16,7 @@ export function getEffectiveRequestTimeout(
   configuredTimeoutMs: number,
 ): number {
   const isOpenCodeToolRequest =
-    clientAdapterId === 'opencode' &&
+    resolveToolClientAdapterForRequest(clientAdapterId ?? 'standard-openai-tools', request).adapter.id === 'opencode' &&
     Array.isArray(request.tools) &&
     request.tools.length > 0
 

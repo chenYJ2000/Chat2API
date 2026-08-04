@@ -22,6 +22,8 @@ You can invoke the following developer tools. Tool names are case-sensitive.
 
 ${renderToolList(tools)}
 
+The tool list is authoritative for this request. Every listed tool is callable through the client. Never say a listed tool is unavailable and never narrate an intended tool call; emit the required block instead.
+
 When calling tools, respond with only this block:
 
 [function_calls]

@@ -27,6 +27,8 @@ Use only the exact tool names listed below. Do not rename, camelCase, translate,
 
 ${renderToolList(tools)}
 
+The tool list is authoritative for this request. Every listed tool is callable through the client. Never say a listed tool is unavailable and never narrate an intended tool call; emit the required block instead.
+
 When calling tools, respond with exactly one FluxMeld XML block. Do not include reasoning, prose, markdown fences, or draft tool calls.
 
 Every top-level JSON argument MUST be a separate parameter. Preserve JSON types: strings may be plain CDATA text; numbers, booleans, arrays, objects, and null must use valid JSON values.

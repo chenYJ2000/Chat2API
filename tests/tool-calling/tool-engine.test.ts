@@ -306,6 +306,74 @@ test('client prompt signatures do not override selected adapter', () => {
   assert.equal(result.plan.shouldInjectPrompt, true)
 })
 
+test('a canonical OpenCode project request cannot silently stop before workspace inspection', () => {
+  const qwenProvider = {
+    ...provider,
+    id: 'qwen-ai',
+    name: 'Qwen AI',
+    apiEndpoint: 'https://chat.qwen.ai',
+  } as Provider
+  const transformed = new ToolCallingEngine().transformRequest({
+    request: request({
+      messages: [
+        { role: 'system', content: 'You are opencode, an interactive CLI tool that helps users with software engineering tasks.' },
+        { role: 'user', content: '给我阅读一下我当前的项目，你觉得 UI 上有什么缺陷？' },
+      ],
+      tools: ['task', 'glob', 'grep', 'read', 'bash'].map((name) => ({
+        type: 'function' as const,
+        function: { name, parameters: { type: 'object', properties: {} } },
+      })),
+      tool_choice: 'auto',
+    }),
+    provider: qwenProvider,
+    actualModel: 'Qwen3.6-Plus',
+  })
+  const result: any = {
+    choices: [{
+      message: { role: 'assistant', content: '让我使用正确的工具来探索项目结构。' },
+      finish_reason: 'stop',
+    }],
+  }
+
+  assert.equal(transformed.plan.clientAdapterId, 'opencode')
+  assert.equal(transformed.plan.diagnostics.configuredClientAdapterId, 'standard-openai-tools')
+  assert.equal(transformed.plan.diagnostics.clientAdapterResolution, 'request_identity')
+  assert.equal(transformed.plan.protocol, 'managed_bracket')
+  assert.equal(transformed.plan.toolChoiceMode, 'forced')
+  assert.equal(transformed.plan.forcedToolName, 'glob')
+  assert.deepEqual(transformed.plan.tools.map((tool) => tool.name), ['glob'])
+  assert.match(String(transformed.messages[0].content), /\[function_calls\]/)
+
+  assert.throws(
+    () => new ToolCallingEngine().applyNonStreamResponse(result, transformed.plan),
+    (error: unknown) => (
+      error instanceof ToolCallingResponseError
+      && error.code === 'missing_required_call'
+      && error.toolName === 'glob'
+      && error.repairable
+    ),
+  )
+})
+
+test('a generic standard auto request may still return an ordinary answer', () => {
+  const transformed = new ToolCallingEngine().transformRequest({
+    request: request(),
+    provider,
+    actualModel: 'deepseek-chat',
+  })
+  const result: any = {
+    choices: [{
+      message: { role: 'assistant', content: 'No tool is needed for this answer.' },
+      finish_reason: 'stop',
+    }],
+  }
+
+  new ToolCallingEngine().applyNonStreamResponse(result, transformed.plan)
+
+  assert.equal(transformed.plan.clientAdapterId, 'standard-openai-tools')
+  assert.equal(result.choices[0].message.content, 'No tool is needed for this answer.')
+})
+
 test('No tools choose disabled', () => {
   const result = new ToolCallingEngine().transformRequest({
     request: request({ tools: undefined }),

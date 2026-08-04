@@ -1435,6 +1435,7 @@ export class RequestForwarder {
         reasoning_effort: request.reasoning_effort,
         max_tokens: request.max_tokens,
         max_completion_tokens: request.max_completion_tokens,
+        toolProtocol: transformed.plan.shouldParseResponse ? transformed.plan.protocol : undefined,
       })
 
       const latency = Date.now() - startTime
