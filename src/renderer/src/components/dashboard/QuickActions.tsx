@@ -29,10 +29,7 @@ export function QuickActions({
   return (
     <Card className={cn('relay-actions', className)}>
       <CardHeader className="relay-panel-header">
-        <div>
-          <span className="relay-panel-kicker">CONTROL DECK</span>
-          <CardTitle className="relay-panel-title">{t('quickActions.title')}</CardTitle>
-        </div>
+        <CardTitle className="relay-panel-title">{t('quickActions.title')}</CardTitle>
         <div className="relay-panel-icon">
           <Zap className="h-4 w-4" />
         </div>

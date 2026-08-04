@@ -7,7 +7,6 @@ import {
   Clock3,
   Pause,
   Play,
-  Radio,
   RefreshCw,
   Users,
 } from 'lucide-react'
@@ -112,26 +111,11 @@ export function Dashboard() {
     : '127.0.0.1:8080'
 
   return (
-    <div className="relay-dashboard space-y-5">
+    <div className="relay-dashboard space-y-4">
       <section className={cn('relay-overview', isProxyRunning && 'is-live')}>
-        <div className="relay-overview-beacon" aria-hidden="true">
-          <span className="relay-overview-beacon-core" />
-          <span className="relay-overview-beacon-ring ring-one" />
-          <span className="relay-overview-beacon-ring ring-two" />
-        </div>
-
         <div className="relay-overview-copy">
-          <div className="relay-overview-kicker">
-            <Radio className="h-3.5 w-3.5" />
-            LOCAL AI ROUTING
-          </div>
           <h1>{t('dashboard.title')}</h1>
           <p>{t('dashboard.description')}</p>
-          <div className="relay-overview-tags" aria-label="Relay capabilities">
-            <span>OPENAI COMPATIBLE</span>
-            <span>ACCOUNT POOL</span>
-            <span>TOOL READY</span>
-          </div>
         </div>
 
         <div className="relay-overview-control">

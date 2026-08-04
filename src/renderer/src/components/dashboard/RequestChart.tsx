@@ -54,10 +54,7 @@ export function RequestChart({ data, className }: RequestChartProps) {
   return (
     <Card className={cn('relay-chart', className)}>
       <CardHeader className="relay-panel-header">
-        <div>
-          <span className="relay-panel-kicker">LIVE TELEMETRY</span>
-          <CardTitle className="relay-panel-title">{t('dashboard.requestsTrend')}</CardTitle>
-        </div>
+        <CardTitle className="relay-panel-title">{t('dashboard.requestsTrend')}</CardTitle>
         <div className="relay-panel-icon">
           <Activity className="h-4 w-4" />
         </div>
