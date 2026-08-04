@@ -13,6 +13,13 @@ Upstream attribution
 - Original contributors: the Chat2API contributors
 - Original copyright notice: Copyright (C) 2026 Chat2API Team
 
+Acknowledgement
+---------------
+
+FluxMeld exists because Chat2API was made available as open source. We
+sincerely thank xiaoY233 and every Chat2API contributor for the original
+project, its engineering work, and the community effort behind it.
+
 This repository also retains the history of the intermediate Chat2API fork at
 https://github.com/chenYJ2000/Chat2API. Its change record remains available in
 FORK_CHANGES.md for provenance.

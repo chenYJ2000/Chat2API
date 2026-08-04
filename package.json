@@ -1,7 +1,7 @@
 {
   "name": "fluxmeld",
   "version": "0.1.0",
-  "description": "FluxMeld - 开源多模型 AI 服务管理器与 OpenAI 兼容 API 网关",
+  "description": "FluxMeld - 本地 AI 路由工作台，提供多服务商账户池、OpenAI 兼容网关与安全工具调用",
   "main": "./out/main/index.js",
   "author": {
     "name": "FluxMeld Contributors"

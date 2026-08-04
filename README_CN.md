@@ -1,279 +1,165 @@
 # FluxMeld
 
 <p align="center">
-  <img src="build/icons.png" alt="FluxMeld Logo" width="128" height="128">
+  <img src="build/icons.png" alt="FluxMeld 标识" width="112" height="112">
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Project-FluxMeld-6B6CFF?style=flat-square" alt="FluxMeld">
-  <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" alt="License">
-  <br>
-  <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-33+-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron"></a>
-  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React"></a>
-  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a>
-  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square" alt="Platform">
+  <strong>面向本地 AI 路由的桌面工作台</strong><br>
+  在一个应用中管理服务商账户、OpenAI 兼容接口与可靠的工具调用。
 </p>
 
 <p align="center">
-  <strong><a href="README.md">English</a></strong>
+  <a href="README.md">English</a> ·
+  <a href="LICENSE">GPL-3.0</a> ·
+  <a href="NOTICE">上游致谢与声明</a>
 </p>
 
-<p align="center">
-  <strong>多平台 AI 服务统一管理工具</strong>
-</p>
+> [!NOTE]
+> FluxMeld 是本地运行的桌面网关：用一个 OpenAI 兼容地址连接你的 AI 客户端，
+> 同时把账户、路由、日志和运行时设置保留在自己手里。
 
-<p align="center">
-  FluxMeld 是一个开源桌面网关，用于统一管理多个 AI 服务商，并提供 OpenAI 兼容 API。支持 DeepSeek、GLM、Kimi、MiniMax、Qwen、Z.ai 等服务商，可接入 OpenAI 兼容客户端。
-</p>
+## FluxMeld 要解决什么
 
-> [!IMPORTANT]
-> FluxMeld 是原项目 [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API)
-> 的 GPL-3.0 衍生项目。本仓库保留完整原始 Git 历史、版权声明与 GPL-3.0 许可证；
-> 请查看 [NOTICE](NOTICE)、[FLUXMELD_CHANGES.md](FLUXMELD_CHANGES.md) 与
-> [FORK_CHANGES.md](FORK_CHANGES.md)。
+当你同时使用多个模型服务商时，编辑器、Agent、脚本往往各自维护一套连接。
+FluxMeld 把这些账户接入一个本地中继，例如
+http://127.0.0.1:8080/v1，并在桌面端提供统一的配置、状态和诊断界面。
 
-![Product Preview](docs/screenshots/preview.png)
+它围绕三件事设计：
 
-## ✨ 功能特性
+| 范围 | FluxMeld 提供的能力 |
+| --- | --- |
+| 本地中继 | OpenAI 兼容接口、路由策略、API Key、请求日志与实时状态。 |
+| 账户运营 | 服务商适配、账户池、健康感知选择、故障转移、模型映射与会话管理。 |
+| Agent 可靠性 | 面向支持客户端的托管工具调用、严格 JSON Schema 校验、有界修复与诊断信息。 |
 
-- OpenAI 兼容 API：提供标准 OpenAI 兼容接口，无缝对接现有工具
-- 多服务商支持：支持 DeepSeek、GLM、Kimi、MiniMax、Perplexity 🆕、Qwen、Z.ai 等
-- 🆕 上下文管理：智能对话上下文管理，支持滑动窗口、Token 限制和总结压缩策略
-- 🆕 工具调用支持：通过提示词工程为所有模型提供通用工具调用能力，兼容 Cherry Studio、Kilo Code 等客户端
-- 🆕 模型映射：灵活的模型名称映射，支持通配符和首选服务商/账户选择
-- 🆕 自定义参数：支持自定义 HTTP Header 开启联网搜索、深度思考、深度研究等功能
-- 仪表盘监控：实时请求流量、Token 使用量和成功率统计
-- API Key 管理：为本地代理生成和管理密钥
-- 模型管理：查看和管理所有服务商的可用模型
-- 请求日志：详细的请求日志记录，便于调试和分析
-- Qwen 安全执行：明确的快速/思考模式、严格工具参数校验，并安全拒绝模型错误输出
-- 可靠故障转移：错误分类、多账号切换、SSE 并发隔离与最终实际账号统计
-- 代理配置：灵活的代理设置和路由策略
-- 系统托盘集成：从菜单栏快速访问状态
-- 多语言支持：支持英文和简体中文
-- 现代界面：简洁响应式界面，支持深色/浅色主题
+FluxMeld 不是模型服务商，也不是所列服务商的官方 API。服务商网页接口、模型可用性
+和访问规则都可能随时变化。
 
-## 🤖 支持的服务商
+## 以本地控制为中心的工作流
 
-| 服务商           | 认证类型          | OAuth | 模型                                                                                                                                                                                                                                            |
-| ------------- | ------------- | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DeepSeek      | User Token    | 是     | deepseek-v4-flash, deepseek-v4-pro                                                                                                                                                                                                            |
-| GLM           | Refresh Token | 是     | GLM-5.2                                                                                                                                                                                                                                       |
-| Kimi          | JWT Token     | 是     | Kimi-K3                                                                                                                                                                                                                                       |
-| MiniMax       | JWT Token     | 是     | MiniMax-M2.7                                                                                                                                                                                                                                  |
-| Mimo          | Cookie        | 是     | MiMo-V2.5-Pro, MiMo-V2.5, MiMo-V2-Flash                                                                                                                                                                                                       |
-| Perplexity    | Cookie        | 是     | Auto                                                                                                                                                                                                                                         |
-| Qwen (国内版)    | SSO Ticket    | 是     | Qwen3.6, Qwen3.7-Max, Qwen3.5-Flash, Qwen3-Max, Qwen3-Max-Thinking-Preview, Qwen3-Coder                                                                                                                                                       |
-| Qwen AI (国际版) | JWT Token     | 是     | Qwen3.7-Max, Qwen3.6-Plus, Qwen3.6-35B-A3B, Qwen3.6-27B, Qwen3-Coder                                                                                                                                                                         |
-| Z.ai          | JWT Token     | 是     | 受前端验证码风控限制，暂不可用                                                                                                                                                                                                                              |
+1. **接入账户**：添加你有权使用的服务商和账户。
+2. **配置中继**：设置监听地址、端口、路由策略，以及可选的本地 API Key 保护。
+3. **连接客户端**：让支持 OpenAI 接口的工具指向本地中继。
+4. **观察与优化**：通过仪表盘、日志、账户健康度、模型映射和工具调用诊断了解实际执行情况。
 
-供应商适配说明和手动添加模型教程见 [docs/providers](docs/providers/README.md)。
+FluxMeld 的数据目录是 ~/.fluxmeld/，不会读取或覆盖 Chat2API 安装产生的数据。
 
-## 📥 安装
+## 主要能力
 
-### FluxMeld 发布
+- **多服务商账户工作台**：支持 DeepSeek、GLM、Kimi、MiniMax、MiMo、Perplexity、
+  Qwen、Qwen AI、Z.ai，以及已配置的自定义服务商。
+- **OpenAI 兼容中继**：提供 chat completions、模型发现、流式响应、API Key
+  鉴权和本地代理配置。
+- **明确的路由策略**：支持模型映射、首选服务商/账户、健康检查、重试分类、
+  账户隔离与故障转移。
+- **面向 Agent 的工具调用**：提供客户端适配、OpenCode 支持、声明工具约束、
+  响应解析、JSON Schema 校验和有界修复。
+- **可见的本地运营**：通过仪表盘、供应商状态、会话控制与脱敏请求日志进行排障。
+- **桌面端优先**：支持 macOS、Windows、Linux，以及浅色和深色主题。
 
-当前本地项目已可发布源码和构建安装包。发布前请先配置新的 FluxMeld 仓库远程地址；
-上游 Chat2API 安装包**不包含** FluxMeld 的改动。
+服务商适配细节见 [docs/providers](docs/providers/README.md)。
 
-### 从源码构建
+## 快速开始
 
-**环境要求：**
+### 环境要求
 
-- Node.js 18+
+- Node.js 18 或更高版本
 - npm
 - Git
 
-```bash
-# 发布后克隆你的 FluxMeld 仓库
-git clone <你的-fluxmeld-仓库地址>
+### 从源码运行
+
+~~~bash
+git clone <你的-FluxMeld-仓库地址>
 cd FluxMeld
-
-# 安装依赖
 npm install
+npm run dev
+~~~
 
-# 启动开发服务器
-npx electron-vite dev 2>&1
-```
+### 构建桌面应用
 
-### 构建生产版本
+~~~bash
+npm run build
+npm run build:mac
+npm run build:win
+npm run build:linux
+~~~
 
-```bash
-npm run build              # 构建应用
-npm run build:mac          # 构建 macOS 版本 (dmg, zip)
-npm run build:win          # 构建 Windows 版本 (nsis)
-npm run build:linux        # 构建 Linux 版本 (AppImage, deb)
-npm run build:all          # 构建所有平台
-```
+### 连接客户端
 
-## 📖 使用方法
+1. 启动 FluxMeld，添加至少一个可用服务商账户。
+2. 在仪表盘或“代理设置”中启动本地中继。
+3. 将 OpenAI 兼容客户端配置为：
 
-### 步骤 1：启动应用
+~~~text
+Base URL: http://127.0.0.1:8080/v1
+API key:  开启 API Key 保护后填写 FluxMeld 生成的密钥
+~~~
 
-安装完成后，启动 FluxMeld。您将看到主仪表盘。
+4. 查看可用模型：
 
-### 步骤 2：添加供应商
+~~~bash
+curl http://127.0.0.1:8080/v1/models
+~~~
 
-1. 从侧边栏导航到**供应商**页面
-2. 点击**添加供应商**按钮
-3. 选择一个内置供应商（例如 DeepSeek）
-4. 输入您的认证凭证
+如果你开启了 API Key 保护，请按 FluxMeld 的配置补充 Authorization 请求头。
 
-例如，获取 DeepSeek Token：
+## 仓库导览
 
-1. 访问 [DeepSeek Chat](https://chat.deepseek.com/)
-2. 开始任意对话
-3. 按 `F12` 打开开发者工具
-4. 转到 **Application** > **Local Storage**
-5. 找到 `userToken` 并复制其值
+| 路径 | 作用 |
+| --- | --- |
+| src/main | Electron 主进程、本地代理、服务商适配、存储和 IPC。 |
+| src/renderer | React 桌面界面，包括仪表盘、设置、供应商、模型与日志页面。 |
+| src/shared | Electron 进程间共享的类型。 |
+| docs/providers | 服务商说明和配置参考。 |
+| tests | 路由、流式响应、工具调用、存储和 UI 协议的回归测试。 |
 
-### 步骤 3：配置代理
+常用开发命令：
 
-1. 从侧边栏导航到**代理设置**页面
-2. 设置端口（默认：8080）
-3. 选择负载均衡策略：
-   - **轮询**：在账户间均匀分配请求
-   - **填充优先**：使用一个账户直到达到限制
-   - **故障转移**：失败时自动切换
-4. 点击**启动代理**
+~~~bash
+npm test
+npm run build
+npm run build:unpack
+~~~
 
-### 步骤 4：测试 API
+## 数据、凭证与日志
 
-使用 Python (OpenAI SDK)：
+FluxMeld 是本地应用，数据保存在 ~/.fluxmeld/：
 
-```python
-from openai import OpenAI
+| 项目 | 用途 |
+| --- | --- |
+| config.json | 本地代理和应用设置。 |
+| providers.json | 服务商配置与模型设置。 |
+| accounts.json | 本地存储的账户凭证。 |
+| logs/ | 请求日志和应用日志。 |
 
-client = OpenAI(
-    api_key="your-api-key",
-    base_url="http://localhost:8080/v1"
-)
+请将服务商凭证和导出的配置文件视为敏感信息：不要提交到仓库，不要在公开 Issue
+中上传，也不要在聊天中粘贴未脱敏的请求日志。
 
-response = client.chat.completions.create(
-    model="deepseek-v4-flash",
-    messages=[
-        {"role": "user", "content": "你好，你是谁？"}
-    ]
-)
+## 项目来源与致谢
 
-print(response.choices[0].message.content)
-```
+### 衷心感谢 Chat2API
 
-### 步骤 5：管理 API Key（可选）
+FluxMeld 是 [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API) 的独立维护
+GPL-3.0 衍生项目。衷心感谢原作者 **xiaoY233** 以及每一位 Chat2API
+贡献者开源分享他们的成果，FluxMeld 才能在此基础上继续演进。
 
-为了安全，您可以启用 API Key 认证：
+本仓库保留原始 Git 历史、版权声明和 GPL-3.0 义务，并将 FluxMeld 自身的身份变更
+与继承的技术变更分开记录：
 
-1. 转到 **API Keys** 页面
-2. 点击**新建 API Key**
-3. 输入名称和描述
-4. 复制生成的密钥
+- [NOTICE](NOTICE)：来源、署名与非关联声明。
+- [FLUXMELD_CHANGES.md](FLUXMELD_CHANGES.md)：FluxMeld 的身份变更。
+- [FORK_CHANGES.md](FORK_CHANGES.md)：保留的技术变更记录。
 
-## 📸 截图
+FluxMeld 不受 Chat2API 或任何所列 AI 服务商的赞助、认可或控制。
 
-| 仪表盘 | 服务商 |
-|--------|--------|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Providers](docs/screenshots/providers.png) |
+## 开源许可
 
-| 代理设置 | API Key |
-|----------|---------|
-| ![Proxy](docs/screenshots/proxy.png) | ![API Keys](docs/screenshots/api-keys.png) |
+FluxMeld 使用 [GNU General Public License v3.0](LICENSE) 发布。重新分发衍生版本
+时，必须保留许可证、原始版权声明和相应的源码义务。
 
-| 模型管理 | 会话管理 |
-|----------|----------|
-| ![Models](docs/screenshots/models.png) | ![Session](docs/screenshots/Session.png) |
+## 贡献
 
-## ⚙️ 设置选项
-
-- **端口**：更改代理监听端口（默认：8080）
-- **路由策略**：轮询（Round Robin）或填充优先（Fill First）
-- **自动启动**：应用启动时自动启动代理
-- **主题**：浅色、深色或跟随系统
-- **语言**：英文或简体中文
-
-## 🏗️ 项目结构
-
-```
-FluxMeld/
-├── src/
-│   ├── main/                    # Electron 主进程
-│   │   ├── index.ts            # 应用入口
-│   │   ├── tray.ts             # 系统托盘集成
-│   │   ├── proxy/              # 代理服务器管理
-│   │   ├── ipc/                # IPC 处理器
-│   │   └── utils/              # 工具函数
-│   ├── preload/                # 上下文桥接
-│   └── renderer/               # React 前端
-│       ├── components/         # UI 组件
-│       ├── pages/              # 页面组件
-│       ├── stores/             # Zustand 状态
-│       └── hooks/              # 自定义 Hooks
-├── build/                      # 构建资源
-└── scripts/                    # 构建脚本
-```
-
-## 🔧 技术栈
-
-| 组件   | 技术                    |
-| ---- | --------------------- |
-| 框架   | Electron 33+          |
-| 前端   | React 18 + TypeScript |
-| 样式   | Tailwind CSS          |
-| 状态管理 | Zustand               |
-| 构建工具 | Vite + electron-vite  |
-| 打包工具 | electron-builder      |
-| 服务器  | Koa                   |
-
-## 📁 数据存储
-
-应用数据存储在 `~/.fluxmeld/` 目录下：
-
-- `config.json` - 应用配置
-- `providers.json` - 服务商设置
-- `accounts.json` - 账户凭证（加密）
-- `logs/` - 请求日志
-
-## ❓ 常见问题
-
-### macOS 提示"应用已损坏，无法打开"？
-
-由于 macOS 的安全机制，非 App Store 下载的应用可能会触发此提示。运行以下命令即可修复：
-
-```bash
-sudo xattr -rd com.apple.quarantine "/Applications/FluxMeld.app"
-```
-
-### 如何更新？
-
-应用内更新在 FluxMeld 维护者配置新的发布源前保持关闭。源码用户可从 FluxMeld 仓库拉取更新并重新构建。
-
-## 🤝 贡献
-
-1. Fork 本项目
-2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 提交 Pull Request
-
-## 📄 许可证
-
-GNU 通用公共许可证 v3.0。详见 [LICENSE](LICENSE)。
-
-原项目署名及衍生关系见 [NOTICE](NOTICE)，FluxMeld 身份变更见
-[FLUXMELD_CHANGES.md](FLUXMELD_CHANGES.md)，继承的 fork 改动见
-[FORK_CHANGES.md](FORK_CHANGES.md)。
-
-这意味着：
-
-- ✅ 可以自由使用、修改和分发
-- ✅ 衍生作品必须以相同许可证开源
-- ✅ 必须保留原始版权声明
-
-## 🙏 致谢
-
-- [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API) — 本项目的原始基础。特别感谢原作者 xiaoY233 和所有原项目贡献者。
-- [Electron](https://www.electronjs.org/) - 跨平台框架
-- [React](https://react.dev/) - UI 框架
-- [TypeScript](https://www.typescriptlang.org/) - 类型安全的 JavaScript
-- [Tailwind CSS](https://tailwindcss.com/) - CSS 框架
-- [Zustand](https://zustand-demo.pmnd.rs/) - 状态管理
-- [Koa](https://koajs.com/) - HTTP 服务器
+欢迎帮助 FluxMeld 变得更安全、更清晰、更易于运营。提交问题时请提供足够的脱敏复现
+信息；提交 Pull Request 时尽量保持改动聚焦并补充测试。

@@ -1,282 +1,185 @@
 # FluxMeld
 
 <p align="center">
-  <img src="build/icons.png" alt="FluxMeld Logo" width="128" height="128">
+  <img src="build/icons.png" alt="FluxMeld mark" width="112" height="112">
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Project-FluxMeld-6B6CFF?style=flat-square" alt="FluxMeld">
-  <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" alt="License">
-  <br>
-  <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-33+-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron"></a>
-  <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React"></a>
-  <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript"></a>
-  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square" alt="Platform">
+  <strong>A local workspace for AI routing</strong><br>
+  One desktop control plane for provider accounts, OpenAI-compatible access, and dependable tool calling.
 </p>
 
 <p align="center">
-  <strong><a href="README_CN.md">中文</a></strong>
+  <a href="README_CN.md">简体中文</a> ·
+  <a href="LICENSE">GPL-3.0</a> ·
+  <a href="NOTICE">Upstream acknowledgement</a>
 </p>
 
-<p align="center">
-  <strong>Multi-platform AI Service Unified Management Tool</strong>
-</p>
+> [!NOTE]
+> FluxMeld is a locally operated desktop gateway. It gives your AI clients one
+> OpenAI-compatible endpoint while you keep control of provider accounts,
+> routing, local logs, and runtime settings.
 
-<p align="center">
-  FluxMeld is an open-source desktop gateway for managing multiple AI providers through an OpenAI-compatible API. It supports providers such as DeepSeek, GLM, Kimi, MiniMax, Qwen, and Z.ai, and integrates with OpenAI-compatible clients.
-</p>
+## What FluxMeld is for
 
-> [!IMPORTANT]
-> FluxMeld is a GPL-3.0 derivative of the original
-> [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API). The original Git history,
-> copyright notices, and GPL-3.0 license are retained. See [NOTICE](NOTICE),
-> [FLUXMELD_CHANGES.md](FLUXMELD_CHANGES.md), and [FORK_CHANGES.md](FORK_CHANGES.md).
+FluxMeld is designed for people who work with several model providers but do
+not want every editor, agent, and script to manage a different connection.
+Run the desktop app, add the accounts you are authorized to use, and connect
+clients to one local relay such as http://127.0.0.1:8080/v1.
 
-![Product Preview](docs/screenshots/preview.png)
+It focuses on three things:
 
-## ✨ Features
+| Area | What FluxMeld provides |
+| --- | --- |
+| Local relay | An OpenAI-compatible API endpoint, configurable routing, API keys, request logs, and a desktop status view. |
+| Account operations | Provider adapters, account pools, health-aware selection, failover, model mapping, and session handling. |
+| Agent reliability | Managed tool calling for supported clients, strict JSON-schema validation, bounded repair, and diagnostics that keep malformed calls out of downstream tools. |
 
-- OpenAI Compatible API: Provides standard OpenAI-compatible API endpoints for seamless integration
-- Multi-Provider Support: Connect DeepSeek, GLM, Kimi, MiniMax, Perplexity 🆕, Qwen, Z.ai and more
-- 🆕 Context Management: Intelligent conversation context management with sliding window, token limit, and summary strategies
-- 🆕 Function Calling Support: Universal tool calling capability for all models via prompt engineering, compatible with Cherry Studio, Kilo Code, and other clients
-- 🆕 Model Mapping: Flexible model name mapping with wildcard support and preferred provider/account selection
-- 🆕 Custom Parameters: Support for custom HTTP headers to enable web search, thinking mode, and deep research features
-- Dashboard Monitoring: Real-time request traffic, token usage, and success rates
-- API Key Management: Generate and manage keys for your local proxy
-- Model Management: View and manage available models from all providers
-- Request Logs: Detailed request logging for debugging and analysis
-- Safer Qwen Execution: Explicit fast/thinking modes, strict tool argument validation, and safe rejection of malformed model output
-- Reliable Failover: Retry classification, multi-account failover, isolated SSE parsing, and accurate final-account statistics
-- Proxy Configuration: Flexible proxy settings and routing strategies
-- System Tray Integration: Quick access to status from menu bar
-- Multilingual: English and Simplified Chinese support
-- Modern UI: Clean, responsive interface with dark/light theme support
+FluxMeld is not a model provider and is not an official API for any listed
+provider. Provider web interfaces, model availability, and access policies can
+change without notice.
 
-## 🤖 Supported Providers
+## A workflow built around local control
 
-| Provider         | Auth Type     | OAuth | Models                                                                                                                                                                                                                                          |
-| ---------------- | ------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| DeepSeek         | User Token    | Yes   | deepseek-v4-flash, deepseek-v4-pro                                                                                                                                                                                                              |
-| GLM              | Refresh Token | Yes   | GLM-5.2                                                                                                                                                                                                                                         |
-| Kimi             | JWT Token     | Yes   | Kimi-K3                                                                                                                                                                                                                                         |
-| MiniMax          | JWT Token     | Yes   | MiniMax-M2.7                                                                                                                                                                                                                                    |
-| Mimo             | Cookie        | Yes   | MiMo-V2.5-Pro, MiMo-V2.5, MiMo-V2-Flash                                                                                                                                                                                                         |
-| Perplexity       | Cookie        | Yes   | Auto                                                                                                                                                                                                                                           |
-| Qwen (CN)        | SSO Ticket    | Yes   | Qwen3.6, Qwen3.7-Max, Qwen3.5-Flash, Qwen3-Max, Qwen3-Max-Thinking-Preview, Qwen3-Coder                                                                                                                                                         |
-| Qwen AI (Global) | JWT Token     | Yes   | Qwen3.7-Max, Qwen3.6-Plus, Qwen3.6-35B-A3B, Qwen3.6-27B, Qwen3-Coder                                                                                                                                                                           |
-| Z.ai             | JWT Token     | Yes   | Temporarily unavailable due to frontend captcha risk control                                                                                                                                                                                    |
+1. **Connect accounts** — Add the providers and accounts you are permitted to
+   use.
+2. **Set the relay policy** — Choose an address, port, routing strategy, and
+   optional local API-key protection.
+3. **Connect your tools** — Point OpenAI-compatible clients to the local
+   endpoint.
+4. **Observe and improve** — Use the dashboard, logs, account health, model
+   mappings, and tool-calling diagnostics to understand what actually ran.
 
-Provider adaptation notes and manual model-addition guides are in [docs/providers](docs/providers/README.md).
+The application stores its own working data under ~/.fluxmeld/ so it does not
+reuse or overwrite a Chat2API installation's data.
 
-## 📥 Installation
+## Highlights
 
-### FluxMeld Releases
+- **Provider-account workspace** for DeepSeek, GLM, Kimi, MiniMax, MiMo,
+  Perplexity, Qwen, Qwen AI, Z.ai, and configured custom providers.
+- **OpenAI-compatible relay** for chat completions, model discovery, streaming,
+  API-key authentication, and local proxy configuration.
+- **Deliberate routing** with model mappings, preferred providers/accounts,
+  health checks, retry classification, account quarantine, and failover.
+- **Agent-oriented tool calling** with client adapters, OpenCode support,
+  declared-tool enforcement, response parsing, JSON-schema validation, and
+  bounded repair attempts.
+- **Visible local operations** through dashboard telemetry, provider status,
+  session controls, and redacted request logs.
+- **Desktop-first setup** on macOS, Windows, and Linux with light and dark
+  themes.
 
-This local project is ready to publish source and build release artifacts. Configure a new
-FluxMeld repository remote before publishing; upstream Chat2API releases do **not** include
-FluxMeld changes.
+See [docs/providers](docs/providers/README.md) for adapter notes and provider
+specific guidance.
 
-### Build from Source
+## Quick start
 
-**Requirements:**
+### Requirements
 
-- Node.js 18+
+- Node.js 18 or newer
 - npm
 - Git
 
-```bash
-# Clone your FluxMeld repository after publication
-git clone <your-fluxmeld-repository-url>
+### Run from source
+
+~~~bash
+git clone <your-FluxMeld-repository-url>
 cd FluxMeld
-
-# Install dependencies
 npm install
+npm run dev
+~~~
 
-# Start development server
-npx electron-vite dev 2>&1
-```
+### Build a desktop app
 
-### Build for Production
+~~~bash
+npm run build
+npm run build:mac
+npm run build:win
+npm run build:linux
+~~~
 
-```bash
-npm run build              # Build the application
-npm run build:mac          # Build for macOS (dmg, zip)
-npm run build:win          # Build for Windows (nsis)
-npm run build:linux        # Build for Linux (AppImage, deb)
-npm run build:all          # Build for all platforms
-```
+### Connect a client
 
-## 📖 Usage
+1. Launch FluxMeld and add at least one available provider account.
+2. Start the local relay from the dashboard or Proxy Settings.
+3. Configure an OpenAI-compatible client with:
 
-### Step 1: Launch the App
+~~~text
+Base URL: http://127.0.0.1:8080/v1
+API key:  a FluxMeld API key when API-key protection is enabled
+~~~
 
-After installation, launch FluxMeld. You'll see the main dashboard.
+4. Confirm available models:
 
-### Step 2: Add a Provider
+~~~bash
+curl http://127.0.0.1:8080/v1/models
+~~~
 
-1. Navigate to **Providers** from the sidebar
-2. Click **Add Provider** button
-3. Select a built-in provider (e.g., DeepSeek)
-4. Enter your authentication credentials
+If API-key protection is enabled, supply the Authorization header required by
+your FluxMeld configuration.
 
-For example, to get a DeepSeek token:
+## Repository guide
 
-1. Visit [DeepSeek Chat](https://chat.deepseek.com/)
-2. Start any conversation
-3. Press `F12` to open Developer Tools
-4. Go to **Application** > **Local Storage**
-5. Find `userToken` and copy its value
+| Path | Purpose |
+| --- | --- |
+| src/main | Electron main process, local proxy, provider adapters, storage, and IPC. |
+| src/renderer | React desktop interface, dashboard, settings, provider, model, and log pages. |
+| src/shared | Types shared by the Electron processes. |
+| docs/providers | Provider-specific notes and setup references. |
+| tests | Regression coverage for routing, streaming, tool calling, storage, and UI contracts. |
 
-### Step 3: Configure Proxy
+Useful development commands:
 
-1. Navigate to **Proxy Settings** from the sidebar
-2. Set the port (default: 8080)
-3. Choose a load balancing strategy:
-   - **Round Robin**: Distributes requests evenly across accounts
-   - **Fill First**: Uses one account until limit is reached
-   - **Failover**: Automatically switches on failure
-4. Click **Start Proxy**
+~~~bash
+npm test
+npm run build
+npm run build:unpack
+~~~
 
-### Step 4: Test the API
+## Data, credentials, and logs
 
-Using Python (OpenAI SDK):
+FluxMeld is a local application. Its application data lives in
+~/.fluxmeld/:
 
-```python
-from openai import OpenAI
+| Item | Purpose |
+| --- | --- |
+| config.json | Local proxy and application settings. |
+| providers.json | Provider configuration and model settings. |
+| accounts.json | Locally stored account credentials. |
+| logs/ | Request and application logs. |
 
-client = OpenAI(
-    api_key="your-api-key",
-    base_url="http://localhost:8080/v1"
-)
+Treat provider credentials and exported configuration files as sensitive. Do
+not commit them, attach them to public issues, or paste unredacted request
+logs into chats.
 
-response = client.chat.completions.create(
-    model="deepseek-v4-flash",
-    messages=[
-        {"role": "user", "content": "Hello, who are you?"}
-    ]
-)
+## Project lineage and thanks
 
-print(response.choices[0].message.content)
-```
+### Thank you, Chat2API
 
-### Step 5: Manage API Keys (Optional)
+FluxMeld is an independently maintained GPL-3.0 derivative of
+[xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API). We sincerely thank
+the original author **xiaoY233** and every Chat2API contributor for openly
+sharing the work that made FluxMeld possible.
 
-For security, you can enable API Key authentication:
+The original Git history, copyright notices, and GPL-3.0 obligations are
+preserved. FluxMeld-specific work is documented separately so the project
+lineage remains clear:
 
-1. Go to **API Keys** page
-2. Click **New API Key**
-3. Enter a name and description
-4. Copy the generated key
+- [NOTICE](NOTICE) — attribution, provenance, and non-affiliation notice.
+- [FLUXMELD_CHANGES.md](FLUXMELD_CHANGES.md) — FluxMeld identity changes.
+- [FORK_CHANGES.md](FORK_CHANGES.md) — retained technical change history.
 
-## 📸 Screenshots
+FluxMeld is not endorsed by, sponsored by, or affiliated with Chat2API or any
+listed AI provider.
 
-| Dashboard | Providers |
-|-----------|-----------|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Providers](docs/screenshots/providers.png) |
+## License
 
-| Proxy Settings | API Keys |
-|----------------|----------|
-| ![Proxy](docs/screenshots/proxy.png) | ![API Keys](docs/screenshots/api-keys.png) |
+FluxMeld is distributed under the [GNU General Public License v3.0](LICENSE).
+Any redistributed derivative must retain the license, original notices, and
+the corresponding source obligations.
 
-| Models | Session |
-|--------|---------|
-| ![Models](docs/screenshots/models.png) | ![Session](docs/screenshots/Session.png) |
+## Contributing
 
-## ⚙️ Settings
-
-- **Port**: Change the proxy listening port (default: 8080)
-- **Routing Strategy**: Round Robin or Fill First
-- **Auto-start**: Launch proxy automatically on app startup
-- **Theme**: Light, Dark, or System preference
-- **Language**: English or Simplified Chinese
-
-## 🏗️ Architecture
-
-```
-FluxMeld/
-├── src/
-│   ├── main/                    # Electron main process
-│   │   ├── index.ts            # App entry point
-│   │   ├── tray.ts             # System tray integration
-│   │   ├── proxy/              # Proxy server management
-│   │   ├── ipc/                # IPC handlers
-│   │   └── utils/              # Utilities
-│   ├── preload/                # Context bridge
-│   └── renderer/               # React frontend
-│       ├── components/         # UI components
-│       ├── pages/              # Page components
-│       ├── stores/             # Zustand state
-│       └── hooks/              # Custom hooks
-├── build/                      # Build resources
-└── scripts/                    # Build scripts
-```
-
-## 🔧 Tech Stack
-
-| Component | Technology            |
-| --------- | --------------------- |
-| Framework | Electron 33+          |
-| Frontend  | React 18 + TypeScript |
-| Styling   | Tailwind CSS          |
-| State     | Zustand               |
-| Build     | Vite + electron-vite  |
-| Packaging | electron-builder      |
-| Server    | Koa                   |
-
-## 📁 Data Storage
-
-Application data is stored in `~/.fluxmeld/` directory:
-
-- `config.json` - Application configuration
-- `providers.json` - Provider settings
-- `accounts.json` - Account credentials (encrypted)
-- `logs/` - Request logs
-
-## ❓ FAQ
-
-### macOS: "App is damaged and can't be opened"
-
-Due to macOS security mechanisms, apps downloaded outside the App Store may trigger this warning. Run the following command to fix it:
-
-```bash
-sudo xattr -rd com.apple.quarantine "/Applications/FluxMeld.app"
-```
-
-### How to update?
-
-The in-app updater is intentionally disabled until a FluxMeld maintainer configures a new
-release feed. Source users can pull the FluxMeld repository and rebuild.
-
-## 🤝 Contributing
-
-1. Fork the project
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
-
-Upstream attribution and the relationship to the original project are recorded in
-[NOTICE](NOTICE). FluxMeld identity changes are listed in
-[FLUXMELD_CHANGES.md](FLUXMELD_CHANGES.md); inherited fork changes remain in
-[FORK_CHANGES.md](FORK_CHANGES.md).
-
-This means:
-
-- ✅ Free to use, modify, and distribute
-- ✅ Derivative works must be open-sourced under the same license
-- ✅ Must preserve original copyright notices
-
-## 🙏 Acknowledgments
-
-- [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API) — the original project. Special thanks to original author xiaoY233 and all upstream contributors.
-- [Electron](https://www.electronjs.org/) - Cross-platform framework
-- [React](https://react.dev/) - UI framework
-- [TypeScript](https://www.typescriptlang.org/) - Type-safe JavaScript
-- [Tailwind CSS](https://tailwindcss.com/) - CSS framework
-- [Zustand](https://zustand-demo.pmnd.rs/) - State management
-- [Koa](https://koajs.com/) - HTTP server
+Contributions that make local AI routing safer, clearer, and easier to operate
+are welcome. Please open an issue with enough redacted context to reproduce
+the behavior, then send focused pull requests with tests when possible.
