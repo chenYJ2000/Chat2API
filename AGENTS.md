@@ -4,7 +4,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## Project Overview
 
-Chat2API Manager is an Electron desktop application that provides an OpenAI-compatible API proxy for multiple AI service providers (DeepSeek, GLM, Kimi, MiniMax, Qwen, Z.ai, Perplexity). It enables using any OpenAI-compatible client with these providers across macOS, Windows, and Linux.
+FluxMeld Manager is an Electron desktop application that provides an OpenAI-compatible API proxy for multiple AI service providers (DeepSeek, GLM, Kimi, MiniMax, Qwen, Z.ai, Perplexity). It enables using any OpenAI-compatible client with these providers across macOS, Windows, and Linux.
 
 ## Build Commands
 
@@ -95,7 +95,7 @@ For models without native function calling, prompts are injected via `promptInje
 
 ## Data Storage
 
-Application data is stored in `~/.chat2api/`:
+Application data is stored in `~/.fluxmeld/`:
 - `config.json` - Application configuration
 - `providers.json` - Provider settings
 - `accounts.json` - Account credentials (encrypted)

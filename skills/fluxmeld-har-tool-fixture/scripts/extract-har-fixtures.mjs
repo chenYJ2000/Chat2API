@@ -150,12 +150,12 @@ function extractFixtures(harPath, clientProfile) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2))
-  const clientProfile = args.client || process.env.CHAT2API_CLIENT_PROFILE || 'custom-har'
-  const harPath = args.har || process.env.CHAT2API_HAR
+  const clientProfile = args.client || process.env.FLUXMELD_CLIENT_PROFILE || 'custom-har'
+  const harPath = args.har || process.env.FLUXMELD_HAR
   const outPath = args.out || `backup/har/${slugifyClientProfile(clientProfile)}-tool-fixtures-${Date.now()}.json`
 
   if (!harPath) {
-    throw new Error('--har or CHAT2API_HAR is required')
+    throw new Error('--har or FLUXMELD_HAR is required')
   }
 
   const fixture = extractFixtures(harPath, clientProfile)

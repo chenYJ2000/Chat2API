@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { useTheme } from '@/hooks/useTheme'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProvidersStore } from '@/stores/providersStore'
-import iconsPng from '@/assets/icons/icons.png'
+import logoIcon from '@/assets/fluxmeld-mark.svg'
 
 interface ProviderInfo {
   id: string
@@ -166,10 +166,10 @@ export function TrayView() {
         <div className="relative px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center shadow-lg border border-white/30">
-              <img src={iconsPng} alt="Chat2API" className="w-8 h-8" />
+              <img src={logoIcon} alt="FluxMeld" className="w-8 h-8" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-white tracking-tight">Chat2API</h1>
+              <h1 className="text-base font-bold text-white tracking-tight">FluxMeld</h1>
               <div className="flex items-center gap-1.5 mt-0.5">
                 {proxyRunning ? (
                   <>

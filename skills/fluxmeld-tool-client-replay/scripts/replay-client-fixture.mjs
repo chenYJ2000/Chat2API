@@ -3,8 +3,8 @@
 import fs from 'node:fs'
 
 const args = parseArgs(process.argv.slice(2))
-const baseUrl = (process.env.CHAT2API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/$/, '')
-const apiKey = process.env.CHAT2API_API_KEY || ''
+const baseUrl = (process.env.FLUXMELD_BASE_URL || 'http://127.0.0.1:8080').replace(/\/$/, '')
+const apiKey = process.env.FLUXMELD_API_KEY || ''
 const sensitiveHeaders = new Set([
   'authorization',
   'cookie',
@@ -79,10 +79,10 @@ function safeHeaders(headers = {}) {
 
 async function main() {
   const profileId = args.profile || 'custom-har'
-  const model = args.model || process.env.CHAT2API_MODEL
+  const model = args.model || process.env.FLUXMELD_MODEL
 
   if (!args.fixture) throw new Error('--fixture is required')
-  if (!model) throw new Error('--model or CHAT2API_MODEL is required')
+  if (!model) throw new Error('--model or FLUXMELD_MODEL is required')
 
   const profile = readProfile(profileId)
 
@@ -99,7 +99,7 @@ async function main() {
     return
   }
 
-  if (!apiKey) throw new Error('CHAT2API_API_KEY is required')
+  if (!apiKey) throw new Error('FLUXMELD_API_KEY is required')
 
   const fixture = readFixture(args.fixture)
   const results = []

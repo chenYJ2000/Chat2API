@@ -46,15 +46,27 @@ export function shouldAttemptToolRepair(
   const failure = result.toolCallingFailure
   const isRequiredMissingCall = request.tool_choice === 'required'
     && failure?.code === 'missing_required_call'
+  const isDetectedOpenCodeToolRefusal = failure?.code === 'missing_required_call'
+    && failure.diagnostics?.toolRefusalDetected === true
+    && Boolean(failure.toolName)
+  const isExplicitOpenCodeToolRequest = failure?.code === 'missing_required_call'
+    && failure.diagnostics?.clientAdapterId === 'opencode'
+    && failure.diagnostics?.toolChoiceMode === 'forced'
+    && Boolean(failure.toolName ?? failure.diagnostics.forcedToolName)
   const isRepairableMalformedCall = (
     failure?.code === 'invalid_arguments'
-      || failure?.code === 'upstream_incomplete_response'
+    || failure?.code === 'upstream_incomplete_response'
   ) && failure.repairable
 
   return !alreadyAttempted
     && !result.success
     && Boolean(request.tools?.length)
-    && (isRequiredMissingCall || isRepairableMalformedCall)
+    && (
+      isRequiredMissingCall
+      || isDetectedOpenCodeToolRefusal
+      || isExplicitOpenCodeToolRequest
+      || isRepairableMalformedCall
+    )
 }
 
 export function createToolRepairRequest(
@@ -101,7 +113,7 @@ export function createToolRepairRequest(
     `Authoritative complete function definition(s), copied from the original request:\n${functionDefinitions}`,
     `This is bounded repair attempt 1 of ${MAX_TOOL_REPAIR_ATTEMPTS}.`,
     requiredCall,
-    'Return exactly one final Chat2API tool_calls block and nothing else.',
+    'Return exactly one final FluxMeld tool_calls block and nothing else.',
     'Do not reason, explain, use markdown fences, emit drafts, or omit required fields.',
     'Do not invent values: derive every argument from the original conversation.',
   ].join('\n\n')
@@ -111,7 +123,7 @@ export function createToolRepairRequest(
         role: 'assistant' as const,
         content: null,
         tool_calls: [{
-          id: 'call_chat2api_rejected',
+          id: 'call_fluxmeld_rejected',
           type: 'function' as const,
           function: {
             name: failedToolName,

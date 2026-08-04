@@ -4,7 +4,7 @@
     "switchToChinese": "Switch to Chinese"
   },
   "app": {
-    "name": "Chat2API",
+    "name": "FluxMeld",
     "description": "AI API Proxy Management System"
   },
   "nav": {
@@ -723,7 +723,7 @@
     "resetFailed": "Failed to reset application",
     "about": "About",
     "aboutDesc": "Application information and version",
-    "appName": "Chat2API",
+    "appName": "FluxMeld",
     "appDesc": "Multi-platform AI Service Unified Management Tool",
     "appVersion": "App Version",
     "currentVersion": "Current Version",
@@ -915,6 +915,8 @@
     "tagline": "Multi-platform AI Service Unified Management Tool",
     "links": "Links",
     "github": "GitHub Repository",
+    "upstream": "Upstream Project",
+    "license": "GPL-3.0 License",
     "documentation": "Documentation",
     "reportIssue": "Report Issue",
     "appUpdates": "Application Updates",
@@ -932,9 +934,9 @@
     "protocolFormatTooltip": "Only for diagnosing custom providers not covered by provider profiles. Built-in priority providers use backend profiles for tool calling.",
     "bracketFormat": "Bracket Diagnostic Format",
     "bracketFormatDesc": "Only for inspecting old output, not a tool calling path for priority providers",
-    "xmlFormat": "Chat2API XML",
+    "xmlFormat": "FluxMeld XML",
     "xmlFormatDesc": "Default managed tool calling protocol",
-    "providerProfileNotice": "DeepSeek, Kimi, GLM, and Qwen use backend provider profiles for tool calling. Priority providers use Chat2API XML.",
+    "providerProfileNotice": "DeepSeek, Kimi, GLM, and Qwen use backend provider profiles for tool calling. Priority providers use FluxMeld XML.",
     "injectionConfig": "Injection Config",
     "configDescription": "Control tool prompt injection strategy",
     "injectionMode": "Injection Mode",
@@ -1013,13 +1015,14 @@
     "clients": {
       "standardOpenAiToolsDesc": "Use this for generic OpenAI-compatible clients and SDKs.",
       "cherryStudioMcpDesc": "Use this for Cherry Studio MCP tools. Exact MCP tool names are preserved.",
+      "openCodeDesc": "Use this for OpenCode. Tool names and call IDs are preserved through an OpenAI tool_calls JSON response.",
       "unknown": "Unknown client adapter."
     },
     "providerMatrix": "Provider support",
     "supported": "Supported",
     "smoke": {
       "title": "Smoke test",
-      "description": "Generate a minimal weather tool-call fixture through the local management API.",
+      "description": "Generate a minimal tool-call fixture through the local management API.",
       "run": "Run test",
       "not_run": "Not run",
       "running": "Running",

@@ -165,7 +165,7 @@ test('Qwen AI discards a superseded partial answer when upstream restarts the re
     {
       choices: [{
         delta: {
-          content: '<|CHAT2API|tool_calls><|CHAT2API|invoke name="signal_wait"',
+          content: '<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="signal_wait"',
           phase: 'answer',
           status: 'typing',
         },

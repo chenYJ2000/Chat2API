@@ -54,7 +54,7 @@
 - 默认使用快速模式。模型名加 `-thinking` 强制开启思考，加 `-fast` 强制关闭思考；模型名后缀优先级最高。
 - `enable_thinking` 可显式开关思考，`thinking_budget` 用正整数限制思考 token。
 - `reasoning_effort` 兼容 `minimal`、`low`、`medium`、`high`、`xhigh`、`max` 和 `enabled`，会映射为有限的思考预算；`none`、`off`、`disabled` 会关闭思考。
-- `max_tokens` 与 `max_completion_tokens` 会继续传给 Qwen 上游。由于 Qwen 网页接口没有公开 OpenAI 式总量开关，Chat2API 还会监控上游累计 usage，在达到回答/总量边界时终止流并返回 `finish_reason: "length"`；思考预算也会自动给最终回答预留空间。
+- `max_tokens` 与 `max_completion_tokens` 会继续传给 Qwen 上游。由于 Qwen 网页接口没有公开 OpenAI 式总量开关，FluxMeld 还会监控上游累计 usage，在达到回答/总量边界时终止流并返回 `finish_reason: "length"`；思考预算也会自动给最终回答预留空间。
 - 以上 token 参数必须是正整数；无效值会返回 HTTP 400，不会先创建无用的官网会话。
 - 托管工具调用会按请求中的完整 JSON Schema 校验参数，且不会做类型强转或删除额外字段。缺少必填字段、类型/枚举/范围不符、非法 JSON 或内部协议标记污染都会返回 HTTP 502，不会作为成功工具调用下发。
 

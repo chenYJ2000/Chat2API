@@ -108,7 +108,7 @@ export function createTray(mainWindow: BrowserWindow | null): Tray {
   tray = new Tray(icon)
 
   const contextMenu = buildContextMenu(mainWindow)
-  tray.setToolTip('Chat2API')
+  tray.setToolTip('FluxMeld')
   tray.setContextMenu(contextMenu)
 
   tray.on('double-click', () => {
@@ -193,7 +193,7 @@ export function updateTrayIcon(isRunning: boolean): void {
   tray.setImage(icon)
 
   const statusText = isRunning ? 'Proxy Running' : 'Proxy Stopped'
-  tray.setToolTip(`Chat2API - ${statusText}`)
+  tray.setToolTip(`FluxMeld - ${statusText}`)
 }
 
 export function updateTrayMenu(mainWindow: BrowserWindow | null): void {

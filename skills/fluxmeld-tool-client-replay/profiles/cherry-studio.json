@@ -7,7 +7,7 @@
   "toolsProtocol": {
     "requiresExactToolName": true,
     "finishReason": "tool_calls",
-    "rawWrapperPattern": "<\\\\|CHAT2API\\\\|tool_calls>|<tool_calls>|\\\\[function_calls\\\\]"
+    "rawWrapperPattern": "<\\\\|FLUXMELD\\\\|tool_calls>|<tool_calls>|\\\\[function_calls\\\\]"
   },
   "promptProtocol": {
     "visibleToolUseRequired": true,

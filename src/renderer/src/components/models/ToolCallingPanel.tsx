@@ -39,9 +39,7 @@ export function ToolCallingPanel() {
   const { appConfig, saveAppConfig } = useProxyStore()
   const [smokeStatus, setSmokeStatus] = useState<'not_run' | 'running' | 'pass' | 'failed'>('not_run')
   const config = appConfig?.toolCallingConfig ?? DEFAULT_TOOL_CALLING_CONFIG
-  const clientAdapters = P0_TOOL_CLIENT_ADAPTERS.filter(
-    (adapter) => adapter.id === 'standard-openai-tools' || adapter.id === 'cherry-studio-mcp',
-  )
+  const clientAdapters = P0_TOOL_CLIENT_ADAPTERS
 
   const selectedClient = useMemo(
     () => clientAdapters.find((adapter) => adapter.id === config.clientAdapterId),

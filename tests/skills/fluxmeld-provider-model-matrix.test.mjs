@@ -5,11 +5,11 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-const script = 'skills/chat2api-provider-model-matrix/scripts/run-model-matrix.mjs'
+const script = 'skills/fluxmeld-provider-model-matrix/scripts/run-model-matrix.mjs'
 const scriptPath = path.resolve(script)
 
 function makeTempRunDir() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat2api-model-matrix-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fluxmeld-model-matrix-'))
   fs.writeFileSync(path.join(dir, 'fixture.json'), JSON.stringify({ scenarios: [] }))
   return dir
 }
@@ -42,8 +42,8 @@ test('matrix runner dry-run does not leak configured secrets', () => {
   const result = spawnSync('node', [script, '--fixture', 'fixture.json', '--dry-run'], {
     env: {
       ...process.env,
-      CHAT2API_API_KEY: 'sk_super_secret_value',
-      CHAT2API_MGMT_SECRET: 'mgmt_super_secret_value',
+      FLUXMELD_API_KEY: 'sk_super_secret_value',
+      FLUXMELD_MGMT_SECRET: 'mgmt_super_secret_value',
     },
     encoding: 'utf8',
   })
@@ -74,9 +74,9 @@ globalThis.fetch = async (url, options) => {
     env: {
       ...process.env,
       NODE_OPTIONS: nodeOptions,
-      CHAT2API_BASE_URL: 'http://127.0.0.1:8080',
-      CHAT2API_API_KEY: 'sk_super_secret_value',
-      CHAT2API_MGMT_SECRET: 'mgmt_super_secret_value',
+      FLUXMELD_BASE_URL: 'http://127.0.0.1:8080',
+      FLUXMELD_API_KEY: 'sk_super_secret_value',
+      FLUXMELD_MGMT_SECRET: 'mgmt_super_secret_value',
     },
     encoding: 'utf8',
   })
@@ -90,7 +90,7 @@ globalThis.fetch = async (url, options) => {
   assert.equal(fetchCall.headers.Authorization, 'Bearer sk_super_secret_value')
 
   const output = JSON.parse(result.stdout)
-  assert.match(output.reportPath, /^backup\/har\/chat2api-model-matrix-.+\.json$/)
+  assert.match(output.reportPath, /^backup\/har\/fluxmeld-model-matrix-.+\.json$/)
 
   const report = JSON.parse(fs.readFileSync(path.join(cwd, output.reportPath), 'utf8'))
   assert.equal(report.selectedModelCount, 1)
@@ -113,9 +113,9 @@ globalThis.fetch = async () => new Response(JSON.stringify({ error: 'failed' }),
     env: {
       ...process.env,
       NODE_OPTIONS: nodeOptions,
-      CHAT2API_BASE_URL: 'http://127.0.0.1:8080',
-      CHAT2API_API_KEY: 'sk_super_secret_value',
-      CHAT2API_MGMT_SECRET: 'mgmt_super_secret_value',
+      FLUXMELD_BASE_URL: 'http://127.0.0.1:8080',
+      FLUXMELD_API_KEY: 'sk_super_secret_value',
+      FLUXMELD_MGMT_SECRET: 'mgmt_super_secret_value',
     },
     encoding: 'utf8',
   })

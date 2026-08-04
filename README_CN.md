@@ -1,13 +1,12 @@
-# Chat2API
+# FluxMeld
 
 <p align="center">
-  <img src="build/icons.png" alt="Chat2API Logo" width="128" height="128">
+  <img src="build/icons.png" alt="FluxMeld Logo" width="128" height="128">
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Fork-v1.4.0--fork.1-blue?style=flat-square&logo=github" alt="衍生版本">
+  <img src="https://img.shields.io/badge/Project-FluxMeld-6B6CFF?style=flat-square" alt="FluxMeld">
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" alt="License">
-  <a href="https://github.com/chenYJ2000/Chat2API/actions/workflows/ci.yml"><img src="https://github.com/chenYJ2000/Chat2API/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <br>
   <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-33+-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron"></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React"></a>
@@ -16,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong><a href="README.md">English</a> | <a href="https://chat2api-doc.vercel.app/">官网介绍</a> | <a href="https://chat2api-doc.vercel.app/docs">文档</a></strong>
+  <strong><a href="README.md">English</a></strong>
 </p>
 
 <p align="center">
@@ -24,15 +23,14 @@
 </p>
 
 <p align="center">
-  Chat2API 通过驱动各大模型的官方 Web UI，实现 0 成本接入主流 AI 大模型。支持 DeepSeek、GLM、Kimi、MiniMax、Qwen、Z.ai 等渠道，可无缝连接 openlcaw、Cline、Roo-Code 等工具，让任何 OpenAI 兼容客户端即刻可用。
+  FluxMeld 是一个开源桌面网关，用于统一管理多个 AI 服务商，并提供 OpenAI 兼容 API。支持 DeepSeek、GLM、Kimi、MiniMax、Qwen、Z.ai 等服务商，可接入 OpenAI 兼容客户端。
 </p>
 
 > [!IMPORTANT]
-> 本仓库是在原项目 [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API)
-> 基础上维护的增强衍生版本。衷心感谢原作者
-> [xiaoY233](https://github.com/xiaoY233) 与所有原项目贡献者创建并开源 Chat2API。
-> 本仓库保留完整原始 Git 历史、版权声明和 GPL-3.0 许可证。请查看
-> [本衍生版本完整变更说明](FORK_CHANGES.md) 与 [NOTICE](NOTICE)。
+> FluxMeld 是原项目 [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API)
+> 的 GPL-3.0 衍生项目。本仓库保留完整原始 Git 历史、版权声明与 GPL-3.0 许可证；
+> 请查看 [NOTICE](NOTICE)、[FLUXMELD_CHANGES.md](FLUXMELD_CHANGES.md) 与
+> [FORK_CHANGES.md](FORK_CHANGES.md)。
 
 ![Product Preview](docs/screenshots/preview.png)
 
@@ -73,11 +71,10 @@
 
 ## 📥 安装
 
-### 衍生版本发布
+### FluxMeld 发布
 
-本衍生版本当前仅发布源码，尚未提供包含这些增强的预编译安装包。
-[原项目 Releases](https://github.com/xiaoY233/Chat2API/releases) 中是上游版本安装包，
-**不包含**本文记录的衍生版本增强。需要这些改动时，请按下文从源码构建。
+当前本地项目已可发布源码和构建安装包。发布前请先配置新的 FluxMeld 仓库远程地址；
+上游 Chat2API 安装包**不包含** FluxMeld 的改动。
 
 ### 从源码构建
 
@@ -88,9 +85,9 @@
 - Git
 
 ```bash
-# 克隆仓库
-git clone https://github.com/chenYJ2000/Chat2API.git
-cd Chat2API
+# 发布后克隆你的 FluxMeld 仓库
+git clone <你的-fluxmeld-仓库地址>
+cd FluxMeld
 
 # 安装依赖
 npm install
@@ -113,7 +110,7 @@ npm run build:all          # 构建所有平台
 
 ### 步骤 1：启动应用
 
-安装完成后，启动 Chat2API。您将看到主仪表盘。
+安装完成后，启动 FluxMeld。您将看到主仪表盘。
 
 ### 步骤 2：添加供应商
 
@@ -196,7 +193,7 @@ print(response.choices[0].message.content)
 ## 🏗️ 项目结构
 
 ```
-Chat2API/
+FluxMeld/
 ├── src/
 │   ├── main/                    # Electron 主进程
 │   │   ├── index.ts            # 应用入口
@@ -228,7 +225,7 @@ Chat2API/
 
 ## 📁 数据存储
 
-应用数据存储在 `~/.chat2api/` 目录下：
+应用数据存储在 `~/.fluxmeld/` 目录下：
 
 - `config.json` - 应用配置
 - `providers.json` - 服务商设置
@@ -242,12 +239,12 @@ Chat2API/
 由于 macOS 的安全机制，非 App Store 下载的应用可能会触发此提示。运行以下命令即可修复：
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Chat2API.app"
+sudo xattr -rd com.apple.quarantine "/Applications/FluxMeld.app"
 ```
 
 ### 如何更新？
 
-应用内更新来源由构建维护者配置。原项目安装包不包含本衍生版本增强；源码用户应从本仓库拉取更新并重新构建。
+应用内更新在 FluxMeld 维护者配置新的发布源前保持关闭。源码用户可从 FluxMeld 仓库拉取更新并重新构建。
 
 ## 🤝 贡献
 
@@ -261,7 +258,8 @@ sudo xattr -rd com.apple.quarantine "/Applications/Chat2API.app"
 
 GNU 通用公共许可证 v3.0。详见 [LICENSE](LICENSE)。
 
-原项目署名及衍生关系见 [NOTICE](NOTICE)，本版本的完整改动见
+原项目署名及衍生关系见 [NOTICE](NOTICE)，FluxMeld 身份变更见
+[FLUXMELD_CHANGES.md](FLUXMELD_CHANGES.md)，继承的 fork 改动见
 [FORK_CHANGES.md](FORK_CHANGES.md)。
 
 这意味着：

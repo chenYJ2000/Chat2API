@@ -4,10 +4,14 @@ import { readFileSync } from 'node:fs'
 
 test('normal tool-calling UI exposes client adapter and managed mode controls', () => {
   const panel = readFileSync('src/renderer/src/components/models/ToolCallingPanel.tsx', 'utf8')
+  const metadata = readFileSync('src/shared/toolCalling.ts', 'utf8')
 
   assert.match(panel, /toolCallingConfig/)
-  assert.match(panel, /standard-openai-tools/)
-  assert.match(panel, /cherry-studio-mcp/)
+  assert.match(panel, /P0_TOOL_CLIENT_ADAPTERS/)
+  assert.doesNotMatch(panel, /adapter\.id === 'standard-openai-tools'/)
+  assert.match(metadata, /standard-openai-tools/)
+  assert.match(metadata, /cherry-studio-mcp/)
+  assert.match(metadata, /opencode/)
   assert.match(panel, /mode.*off/s)
   assert.match(panel, /mode.*auto/s)
   assert.match(panel, /mode.*force/s)

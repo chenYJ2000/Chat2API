@@ -76,7 +76,7 @@ export function isToolCallingResponseErrorMessage(message?: string): boolean {
 
 const MAX_SCHEMA_CACHE_ENTRIES = 256
 const MAX_SCHEMA_CHARS = 100_000
-const MANAGED_PROTOCOL_MARKER = /<\/?\|CHAT2API\||<\/?(?:tool_calls|tool_use|invoke|parameter|parameters|arguments|antml:function_calls|antml:invoke|antml:parameters)\b|\[\/?function_calls\]|\[call:[^\]]+\]|\[\/call\]/i
+const MANAGED_PROTOCOL_MARKER = /<\/?\|FLUXMELD\||<\/?(?:tool_calls|tool_use|invoke|parameter|parameters|arguments|antml:function_calls|antml:invoke|antml:parameters)\b|\[\/?function_calls\]|\[call:[^\]]+\]|\[\/call\]/i
 const schemaValidator = new Ajv({
   allErrors: true,
   coerceTypes: false,
@@ -131,8 +131,19 @@ export class ToolCallingEngine {
       }
     }
 
+    const prompt = renderPrompt(plan.protocol, plan.tools, this.config)
+    const trailingToolInstruction = adapter.createTrailingToolInstruction?.(
+      plan.protocol,
+      plan.tools,
+    )
+
     return {
-      messages: injectPrompt(request.messages, renderPrompt(plan.protocol, plan.tools, this.config)),
+      messages: [
+        ...injectPrompt(request.messages, prompt),
+        ...(trailingToolInstruction
+          ? [{ role: 'user' as const, content: trailingToolInstruction }]
+          : []),
+      ],
       tools: undefined,
       plan,
     }
@@ -168,6 +179,34 @@ export class ToolCallingEngine {
       if (typeof message.content !== 'string') {
         this.assertRequiredToolCall(plan)
         return
+      }
+
+      const responseAdapter = getToolClientAdapter(plan.clientAdapterId)
+      const cleanedResponseContent = responseAdapter.stripToolRefusalPreamble?.(
+        message.content,
+        plan.allowedToolNames,
+      )
+      if (cleanedResponseContent) {
+        message.content = cleanedResponseContent
+      }
+      const refusedTool = responseAdapter.detectToolRefusal?.(
+        message.content,
+        plan.allowedToolNames,
+      )
+      if (refusedTool) {
+        plan.diagnostics = {
+          ...plan.diagnostics,
+          toolRefusalDetected: true,
+          refusedToolName: sanitizeToolName(refusedTool.toolName),
+        }
+        throw new ToolCallingResponseError(
+          `Upstream model refused declared tool "${sanitizeToolName(refusedTool.toolName)}" instead of emitting a tool call`,
+          'missing_required_call',
+          plan.diagnostics,
+          [],
+          refusedTool.toolName,
+          true,
+        )
       }
 
       const parseResult = parseSelectedProtocol(message.content, plan)
@@ -267,6 +306,10 @@ export class ToolCallingEngine {
     throw new ToolCallingResponseError(
       `Upstream model did not return the required tool call${suffix}`,
       'missing_required_call',
+      undefined,
+      [],
+      plan.forcedToolName,
+      Boolean(plan.forcedToolName),
     )
   }
 }

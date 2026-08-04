@@ -1,8 +1,8 @@
-# Chat2API 项目代码文档
+# FluxMeld 项目代码文档
 
 ## 1. 项目概述
 
-Chat2API 是一个多平台 AI 服务统一管理工具，通过利用官方 Web UI 实现零成本访问领先的 AI 模型。它支持 DeepSeek、GLM、Kimi、MiniMax、Qwen、Z.ai 等提供商，并与 openlcaw、Cline、Roo-Code 等工具无缝集成，使任何 OpenAI 兼容客户端都能开箱即用。
+FluxMeld 是一个多平台 AI 服务统一管理工具，通过利用官方 Web UI 实现零成本访问领先的 AI 模型。它支持 DeepSeek、GLM、Kimi、MiniMax、Qwen、Z.ai 等提供商，并与 openlcaw、Cline、Roo-Code 等工具无缝集成，使任何 OpenAI 兼容客户端都能开箱即用。
 
 ### 核心功能
 - OpenAI 兼容 API：提供标准的 OpenAI 兼容 API 端点，实现无缝集成
@@ -22,12 +22,12 @@ Chat2API 是一个多平台 AI 服务统一管理工具，通过利用官方 Web
 
 ## 2. 项目架构
 
-Chat2API 采用 Electron 架构，分为主进程和渲染进程两部分。主进程负责核心功能实现，包括代理服务器、账户管理、模型管理等；渲染进程负责用户界面展示。
+FluxMeld 采用 Electron 架构，分为主进程和渲染进程两部分。主进程负责核心功能实现，包括代理服务器、账户管理、模型管理等；渲染进程负责用户界面展示。
 
 ### 架构图
 
 ```
-Chat2API/
+FluxMeld/
 ├── src/
 │   ├── main/                    # Electron 主进程
 │   │   ├── index.ts            # 应用入口点
@@ -230,7 +230,7 @@ npm run start:sandbox
 
 ### 7.1 配置文件
 
-应用数据存储在 `~/.chat2api/` 目录：
+应用数据存储在 `~/.fluxmeld/` 目录：
 - `config.json` - 应用配置
 - `providers.json` - 提供商设置
 - `accounts.json` - 账户凭证（加密）
@@ -285,7 +285,7 @@ npm run start:sandbox
 由于 macOS 安全机制，从 App Store 外下载的应用可能会触发此警告。运行以下命令修复：
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Chat2API.app"
+sudo xattr -rd com.apple.quarantine "/Applications/FluxMeld.app"
 ```
 
 ### 9.2 端口被占用

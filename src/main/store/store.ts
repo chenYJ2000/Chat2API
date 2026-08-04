@@ -163,10 +163,10 @@ class StoreManager {
 
   /**
    * Get Storage Path
-   * Storage path: ~/.chat2api/
+   * Storage path: ~/.fluxmeld/
    */
   private getStoragePath(): string {
-    return join(homedir(), '.chat2api')
+    return join(homedir(), '.fluxmeld')
   }
 
   /**
@@ -180,7 +180,7 @@ class StoreManager {
       if (safeStorage.isEncryptionAvailable()) {
         // Use a fixed key - electron-store will use this to encrypt/decrypt data
         // The key itself is not stored in the data file, only used for encryption
-        return 'chat2api-fixed-encryption-key-v1'
+        return 'fluxmeld-fixed-encryption-key-v1'
       }
     } catch (error) {
       console.warn('Encryption unavailable, using unencrypted storage:', error)

@@ -26,6 +26,7 @@ import {
   RequestTimeoutError,
   waitForAbort,
 } from '../requestLifecycle'
+import { getEffectiveRequestTimeout } from '../requestTimeoutPolicy'
 
 const router = new Router({ prefix: '/v1/chat' })
 
@@ -173,6 +174,11 @@ router.post('/completions', async (ctx: Context) => {
   }
 
   const config = storeManager.getConfig()
+  const requestTimeoutMs = getEffectiveRequestTimeout(
+    request,
+    config.toolCallingConfig?.clientAdapterId,
+    config.requestTimeout,
+  )
   const preferredProviderId = modelMapper.getPreferredProvider(request.model)
   const preferredAccountId = modelMapper.getPreferredAccount(request.model)
 
@@ -233,7 +239,7 @@ router.post('/completions', async (ctx: Context) => {
 
   const requestDeadline = createRequestDeadline({
     requestId,
-    timeoutMs: config.requestTimeout,
+    timeoutMs: requestTimeoutMs,
     parentSignal: clientAbortController.signal,
     startedAt: startTime,
   })
@@ -241,7 +247,7 @@ router.post('/completions', async (ctx: Context) => {
     ...context,
     signal: requestDeadline.signal,
     deadlineAt: requestDeadline.deadlineAt,
-    timeoutMs: config.requestTimeout,
+    timeoutMs: requestTimeoutMs,
   }
 
   proxyStatusManager.recordRequestStart(request.model, provider.id, account.id)

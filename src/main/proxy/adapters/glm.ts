@@ -161,7 +161,7 @@ export function addGLMTransportNonce(
   messages: Array<{ role: string; content: any[] }>,
   requestId: string,
 ): Array<{ role: string; content: any[] }> {
-  const marker = `<!-- chat2api transport request ${requestId}; no semantic meaning; do not repeat -->\n`
+  const marker = `<!-- fluxmeld transport request ${requestId}; no semantic meaning; do not repeat -->\n`
   let markerAdded = false
 
   return messages.map((message) => ({

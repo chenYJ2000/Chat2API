@@ -69,7 +69,10 @@ test('P0 metadata exposes only approved clients and providers', () => {
   assert.deepEqual(P0_TOOL_CLIENT_ADAPTERS.map((adapter) => adapter.id), [
     'standard-openai-tools',
     'cherry-studio-mcp',
+    'opencode',
   ])
+
+  assert.equal(normalizeToolCallingConfig({ clientAdapterId: 'opencode' }).clientAdapterId, 'opencode')
 
   assert.deepEqual(P0_TOOL_PROVIDER_SUPPORT.map((provider) => provider.providerId), [
     'deepseek',

@@ -16,7 +16,17 @@ export const openAiChatProtocol: ToolProtocolAdapter = {
   id: 'openai_chat',
 
   renderPrompt(tools) {
-    return `## Available Tools\n${renderToolList(tools)}\n\nReturn OpenAI chat tool_calls JSON only.`
+    return `## Available Tools
+${renderToolList(tools)}
+
+When you need to call a tool, return exactly one OpenAI chat-completions JSON object and nothing else. Tool names are case-sensitive: use only an exact name listed above. The function.arguments field MUST be a JSON-encoded string, not a JSON object.
+
+The calling client executes every returned tool call. Never simulate a tool result, never claim that a listed tool is unavailable, and never render a tool call as prose. If the user explicitly asks to run, read, write, search, or otherwise use a listed tool, you MUST return that tool call instead of answering the request yourself.
+
+Example shape (use the selected tool's real name and schema):
+{"tool_calls":[{"id":"call_1","type":"function","function":{"name":"exact_tool_name","arguments":"{\\"argument\\":\\"value\\"}"}}]}
+
+If no tool is needed, reply with normal text. Do not use XML, markdown fences, or a provider-specific tool syntax.`
   },
 
   detectStart(buffer) {

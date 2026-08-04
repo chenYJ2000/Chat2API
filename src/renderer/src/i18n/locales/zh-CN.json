@@ -4,7 +4,7 @@
     "switchToChinese": "切换到中文"
   },
   "app": {
-    "name": "Chat2API",
+    "name": "FluxMeld",
     "description": "AI API 代理管理系统"
   },
   "nav": {
@@ -723,7 +723,7 @@
     "resetFailed": "应用重置失败",
     "about": "关于",
     "aboutDesc": "应用程序信息和版本",
-    "appName": "Chat2API",
+    "appName": "FluxMeld",
     "appDesc": "多平台 AI 服务统一管理工具",
     "appVersion": "应用版本",
     "currentVersion": "当前版本",
@@ -915,6 +915,8 @@
     "tagline": "多平台 AI 服务统一管理工具",
     "links": "链接",
     "github": "GitHub 仓库",
+    "upstream": "上游项目",
+    "license": "GPL-3.0 许可证",
     "documentation": "文档",
     "reportIssue": "报告问题",
     "appUpdates": "应用更新",
@@ -932,9 +934,9 @@
     "protocolFormatTooltip": "仅用于排查未纳入 provider profile 的自定义供应商。内置重点 provider 使用后端 profile 管理工具调用协议。",
     "bracketFormat": "Bracket 诊断格式",
     "bracketFormatDesc": "仅用于旧输出排查，不作为重点 provider 的工具调用方案",
-    "xmlFormat": "Chat2API XML",
+    "xmlFormat": "FluxMeld XML",
     "xmlFormatDesc": "默认托管工具调用输出协议",
-    "providerProfileNotice": "DeepSeek、Kimi、GLM、Qwen 使用后端 provider profile 管理工具调用；当前重点 provider 统一使用 Chat2API XML。",
+    "providerProfileNotice": "DeepSeek、Kimi、GLM、Qwen 使用后端 provider profile 管理工具调用；当前重点 provider 统一使用 FluxMeld XML。",
     "injectionConfig": "注入配置",
     "configDescription": "控制工具提示词的注入策略",
     "injectionMode": "注入模式",
@@ -1013,13 +1015,14 @@
     "clients": {
       "standardOpenAiToolsDesc": "适用于通用 OpenAI 兼容客户端和 SDK。",
       "cherryStudioMcpDesc": "适用于 Cherry Studio MCP 工具，保留精确 MCP 工具名称。",
+      "openCodeDesc": "适用于 OpenCode。保留其工具名称与调用 ID，并使用 OpenAI tool_calls JSON 响应格式。",
       "unknown": "未知客户端适配器。"
     },
     "providerMatrix": "供应商支持",
     "supported": "支持",
     "smoke": {
       "title": "冒烟测试",
-      "description": "通过本地管理 API 生成最小天气工具调用测试用例。",
+      "description": "通过本地管理 API 生成最小工具调用测试用例。",
       "run": "运行测试",
       "not_run": "未运行",
       "running": "运行中",

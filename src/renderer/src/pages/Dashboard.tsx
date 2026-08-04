@@ -97,33 +97,46 @@ export function Dashboard() {
   }, [navigate])
 
   const isElectron = !!window.electronAPI
+  const isProxyRunning = proxyStatus?.isRunning ?? proxyEnabled
+  const endpoint = proxyStatus
+    ? `${proxyStatus.host}:${proxyStatus.port}`
+    : '127.0.0.1:8080'
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t('dashboard.title')}</h1>
-          <p className="text-muted-foreground">
-            {t('dashboard.description')}
-          </p>
+    <div className="dashboard-command space-y-5">
+      <section className="dashboard-hero">
+        <div className="dashboard-hero-copy">
+          <div className="dashboard-hero-eyebrow">
+            <span className={cn('dashboard-live-dot', isProxyRunning && 'is-running')} />
+            {t('dashboard.proxyStatus')}
+          </div>
+          <h1>{t('dashboard.title')}</h1>
+          <p>{t('dashboard.description')}</p>
         </div>
-        <div className="flex items-center gap-2">
-          {lastUpdated && (
-            <span className="text-xs text-muted-foreground">
-              {t('dashboard.lastUpdated')}: {new Date(lastUpdated).toLocaleTimeString()}
-            </span>
-          )}
+
+        <div className="dashboard-hero-controls">
+          <div className={cn('dashboard-service-card', isProxyRunning && 'is-running')}>
+            <span className="dashboard-service-label">{isProxyRunning ? t('dashboard.running') : t('dashboard.stopped')}</span>
+            <span className="dashboard-service-endpoint">{endpoint}</span>
+          </div>
           <Button
             variant="outline"
             size="sm"
             onClick={refreshData}
             disabled={isLoading}
+            className="dashboard-refresh-button"
           >
             <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
             {t('dashboard.refresh')}
           </Button>
         </div>
-      </div>
+      </section>
+
+      {lastUpdated && (
+        <div className="dashboard-updated-at">
+          {t('dashboard.lastUpdated')}: {new Date(lastUpdated).toLocaleTimeString()}
+        </div>
+      )}
 
       {!isElectron && (
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400">
@@ -138,7 +151,7 @@ export function Dashboard() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="dashboard-metrics-grid grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard
           title={t('dashboard.totalRequests')}
           value={stats.totalRequests.toLocaleString()}
@@ -177,7 +190,7 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="dashboard-primary-grid grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <RequestChart data={chartData} />
         </div>
@@ -193,7 +206,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2 items-stretch">
+      <div className="dashboard-secondary-grid grid gap-4 lg:grid-cols-2 items-stretch">
         <ProviderStatusCard providers={providers} />
         <RecentActivity
           activities={activities}

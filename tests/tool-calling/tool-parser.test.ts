@@ -25,9 +25,9 @@ test('managed bracket parses valid tool call', () => {
   assert.equal(result.content, '')
 })
 
-test('managed xml parses valid Chat2API tool call', () => {
+test('managed xml parses valid FluxMeld tool call', () => {
   const result = managedXmlProtocol.parse(
-    '<|CHAT2API|tool_calls><|CHAT2API|invoke name="default_api:read_file"><|CHAT2API|parameter name="filePath"><![CDATA[/tmp/a]]></|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>',
+    '<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="default_api:read_file"><|FLUXMELD|parameter name="filePath"><![CDATA[/tmp/a]]></|FLUXMELD|parameter></|FLUXMELD|invoke></|FLUXMELD|tool_calls>',
     { tools, protocol: 'managed_xml' },
   )
 
@@ -57,7 +57,7 @@ test('managed xml accepts single-quoted names and harmless wrapper attributes', 
 
 test('managed xml preserves and parses a tool call wrapped in a fenced block', () => {
   const result = managedXmlProtocol.parse(
-    '```xml\n<|CHAT2API|tool_calls><|CHAT2API|invoke name="default_api:read_file"><|CHAT2API|parameter name="filePath">fake</|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>\n```',
+    '```xml\n<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="default_api:read_file"><|FLUXMELD|parameter name="filePath">fake</|FLUXMELD|parameter></|FLUXMELD|invoke></|FLUXMELD|tool_calls>\n```',
     { tools, protocol: 'managed_xml' },
   )
 
@@ -77,7 +77,7 @@ test('managed xml parses a direct JSON object inside invoke', () => {
 
 test('managed xml unwraps an arguments parameter containing the complete JSON object', () => {
   const result = managedXmlProtocol.parse(
-    '<|CHAT2API|tool_calls><|CHAT2API|invoke name="default_api:read_file"><|CHAT2API|parameter name="arguments"><![CDATA[{"filePath":"/tmp/wrapped"}]]></|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>',
+    '<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="default_api:read_file"><|FLUXMELD|parameter name="arguments"><![CDATA[{"filePath":"/tmp/wrapped"}]]></|FLUXMELD|parameter></|FLUXMELD|invoke></|FLUXMELD|tool_calls>',
     { tools, protocol: 'managed_xml' },
   )
 
@@ -129,7 +129,7 @@ test('unknown tool name is rejected', () => {
 
 test('managed XML parser rejects undeclared tool names and records invalid names', () => {
   const result = managedXmlProtocol.parse(
-    '<|CHAT2API|tool_calls><|CHAT2API|invoke name="missing_tool">{}</|CHAT2API|invoke></|CHAT2API|tool_calls>',
+    '<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="missing_tool">{}</|FLUXMELD|invoke></|FLUXMELD|tool_calls>',
     { tools, protocol: 'managed_xml' },
   )
 

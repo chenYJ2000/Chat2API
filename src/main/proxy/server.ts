@@ -162,7 +162,7 @@ export class ProxyServer {
 
     this.router.get('/', async (ctx) => {
       ctx.body = {
-        name: 'Chat2API Proxy',
+        name: 'FluxMeld Proxy',
         version: '1.1.2',
         description: 'OpenAI API compatible proxy service',
         endpoints: [

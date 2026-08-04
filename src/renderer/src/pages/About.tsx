@@ -8,11 +8,10 @@ import {
   AlertCircle,
   Github,
   FileText,
-  Bug,
   Zap,
   RefreshCw,
 } from 'lucide-react'
-import logoIcon from '@/assets/icons/icons.png'
+import logoIcon from '@/assets/fluxmeld-mark.svg'
 
 type UpdatePhase = 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
 
@@ -203,19 +202,14 @@ export function About() {
 
   const links = [
     {
-      label: t('about.github'),
+      label: t('about.upstream'),
       icon: Github,
       url: 'https://github.com/xiaoY233/Chat2API',
     },
     {
-      label: t('about.documentation'),
+      label: t('about.license'),
       icon: FileText,
-      url: 'https://chat2api-doc.vercel.app/',
-    },
-    {
-      label: t('about.reportIssue'),
-      icon: Bug,
-      url: 'https://github.com/xiaoY233/Chat2API/issues',
+      url: 'https://www.gnu.org/licenses/gpl-3.0.html',
     },
   ]
 
@@ -229,7 +223,7 @@ export function About() {
             <div className="relative w-24 h-24 rounded-[2rem] glass-card p-4 shadow-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] overflow-hidden">
               <img
                 src={logoIcon}
-                alt="Chat2API Logo"
+                alt="FluxMeld Logo"
                 className="w-full h-full object-contain drop-shadow-md"
               />
             </div>
@@ -258,7 +252,7 @@ export function About() {
               {t('about.links')}
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {links.map((link) => (
                 <button
                   key={link.label}

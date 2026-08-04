@@ -64,6 +64,37 @@ test('auto mode manages P0 provider requests with tools', () => {
   assert.deepEqual([...plan.allowedToolNames], ['weather-test:get_weather'])
 })
 
+test('OpenCode selects its Qwen bracket protocol override', () => {
+  const plan = buildToolCallingRuntimePlan({
+    requestId: 'r-opencode',
+    providerId: 'qwen-ai',
+    actualModel: 'Qwen3.6-Plus',
+    config: {
+      enabled: true,
+      mode: 'auto',
+      clientAdapterId: 'opencode',
+      diagnosticsEnabled: false,
+      advanced: { promptPreviewEnabled: false },
+    },
+    clientRequest: {
+      clientAdapterId: 'opencode',
+      toolSource: 'openai',
+      tools: [{ ...tools[0], name: 'bash', source: 'openai' }],
+      toolChoice: { mode: 'auto' },
+      preferredProtocolByProvider: { 'qwen-ai': 'managed_bracket' },
+      diagnostics: {
+        detectedClientType: 'opencode',
+        rawToolCount: 1,
+        normalizedToolNames: ['bash'],
+      },
+    },
+  })
+
+  assert.equal(plan.mode, 'managed')
+  assert.equal(plan.protocol, 'managed_bracket')
+  assert.deepEqual([...plan.allowedToolNames], ['bash'])
+})
+
 test('tool_choice none disables prompt injection and parsing', () => {
   const plan = buildToolCallingRuntimePlan({
     requestId: 'r3',

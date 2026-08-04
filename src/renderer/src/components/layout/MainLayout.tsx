@@ -4,18 +4,17 @@ import { Header } from './Header'
 
 export function MainLayout() {
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg-primary)]">
-      <div className="bokeh-bg">
-        <div className="bokeh-blob bokeh-blob-1" />
-        <div className="bokeh-blob bokeh-blob-2" />
-      </div>
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 overflow-auto p-6">
-          <Outlet />
+    <div className="command-shell">
+      <div className="command-grid" aria-hidden="true" />
+      <Sidebar />
+      <section className="command-workspace">
+        <Header />
+        <main className="command-content">
+          <div className="command-content-frame">
+            <Outlet />
+          </div>
         </main>
-      </div>
+      </section>
     </div>
   )
 }

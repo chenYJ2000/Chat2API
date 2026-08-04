@@ -346,9 +346,9 @@ export class ConfigManager {
       }
       if (
         config.toolCallingConfig.clientAdapterId !== undefined &&
-        !['standard-openai-tools', 'cherry-studio-mcp'].includes(String(config.toolCallingConfig.clientAdapterId))
+        !['standard-openai-tools', 'cherry-studio-mcp', 'opencode'].includes(String(config.toolCallingConfig.clientAdapterId))
       ) {
-        errors.push('toolCallingConfig.clientAdapterId must be one of: standard-openai-tools, cherry-studio-mcp')
+        errors.push('toolCallingConfig.clientAdapterId must be one of: standard-openai-tools, cherry-studio-mcp, opencode')
       }
     }
     

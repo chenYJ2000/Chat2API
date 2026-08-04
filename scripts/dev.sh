@@ -1,5 +1,5 @@
 #!/bin/bash
-# Chat2API 开发启动脚本
+# FluxMeld 开发启动脚本
 # 自动处理 root 用户环境下的沙箱问题和无显示环境
 
 cd "$(dirname "$0")/.."

@@ -86,7 +86,7 @@ test('OpenAI tools plus DeepSeek choose managed prompt', () => {
   assert.equal(result.plan.shouldInjectPrompt, true)
   assert.equal(result.tools, undefined)
   assert.equal(result.plan.tools.length, 2)
-  assert.match(result.messages[0].content as string, /<\|CHAT2API\|tool_calls>/)
+  assert.match(result.messages[0].content as string, /<\|FLUXMELD\|tool_calls>/)
 })
 
 test('explicit Cherry Studio MCP adapter uses managed prompt and preserves tool names', () => {
@@ -106,6 +106,148 @@ test('explicit Cherry Studio MCP adapter uses managed prompt and preserves tool 
   assert.equal(result.plan.shouldInjectPrompt, true)
   assert.equal(result.plan.tools[0].name, 'default_api:read_file')
   assert.equal(result.plan.tools[0].source, 'mcp')
+})
+
+test('OpenCode converts provider tool output to OpenAI tool_calls without renaming names or ids', () => {
+  const engine = new ToolCallingEngine({ clientAdapterId: 'opencode' })
+  const transformed = engine.transformRequest({
+    request: request({
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'bash',
+          description: 'Run a shell command',
+          parameters: {
+            type: 'object',
+            properties: { command: { type: 'string' } },
+            required: ['command'],
+          },
+        },
+      }],
+    }),
+    provider,
+    actualModel: 'Qwen3.6-Plus',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: '<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="bash"><|FLUXMELD|parameter name="command"><![CDATA[pwd]]></|FLUXMELD|parameter></|FLUXMELD|invoke></|FLUXMELD|tool_calls>',
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  assert.equal(transformed.plan.clientAdapterId, 'opencode')
+  assert.equal(transformed.plan.protocol, 'managed_xml')
+  assert.match(transformed.messages[0].content as string, /FluxMeld XML block/)
+  assert.match(transformed.messages[0].content as string, /Tool results will be provided/)
+  assert.equal(transformed.messages.at(-1)?.role, 'user')
+  assert.match(String(transformed.messages.at(-1)?.content), /OpenCode compatibility tool contract/)
+  assert.match(String(transformed.messages.at(-1)?.content), /Exact listed tool names: bash/)
+  assert.match(String(transformed.messages.at(-1)?.content), /FluxMeld XML tool_calls block/)
+
+  engine.applyNonStreamResponse(result, transformed.plan)
+
+  assert.equal(result.choices[0].finish_reason, 'tool_calls')
+  assert.equal(result.choices[0].message.tool_calls[0].id, 'call_0')
+  assert.equal(result.choices[0].message.tool_calls[0].function.name, 'bash')
+  assert.equal(result.choices[0].message.tool_calls[0].function.arguments, '{"command":"pwd"}')
+})
+
+test('OpenCode marks a declared-tool refusal for one bounded forced retry', () => {
+  const engine = new ToolCallingEngine({ clientAdapterId: 'opencode' })
+  const transformed = engine.transformRequest({
+    request: request({
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'bash',
+          parameters: {
+            type: 'object',
+            properties: { command: { type: 'string' } },
+            required: ['command'],
+          },
+        },
+      }],
+    }),
+    provider,
+    actualModel: 'Qwen3.6-Plus',
+  })
+  const result: any = {
+    choices: [{
+      message: { role: 'assistant', content: 'Tool bash does not exists.' },
+      finish_reason: 'stop',
+    }],
+  }
+
+  assert.throws(
+    () => engine.applyNonStreamResponse(result, transformed.plan),
+    (error: unknown) => (
+      error instanceof ToolCallingResponseError
+      && error.code === 'missing_required_call'
+      && error.toolName === 'bash'
+      && error.repairable
+      && error.diagnostics?.toolRefusalDetected === true
+      && error.diagnostics?.refusedToolName === 'bash'
+    ),
+  )
+})
+
+test('OpenCode keeps a substantive answer after a stale tool-refusal preamble', () => {
+  const engine = new ToolCallingEngine({ clientAdapterId: 'opencode' })
+  const transformed = engine.transformRequest({
+    request: request({
+      messages: [{ role: 'user', content: 'Summarize the project.' }],
+      tools: [{
+        type: 'function',
+        function: { name: 'read', parameters: { type: 'object', properties: {} } },
+      }],
+    }),
+    provider,
+    actualModel: 'Qwen3.6-Plus',
+  })
+  const result: any = {
+    choices: [{
+      message: {
+        role: 'assistant',
+        content: 'Tool read does not exists.\n\nFluxMeld is an Electron desktop API proxy.',
+      },
+      finish_reason: 'stop',
+    }],
+  }
+
+  engine.applyNonStreamResponse(result, transformed.plan)
+
+  assert.equal(
+    result.choices[0].message.content,
+    'FluxMeld is an Electron desktop API proxy.',
+  )
+})
+
+test('OpenCode narrows an explicit user tool request before rendering the prompt', () => {
+  const engine = new ToolCallingEngine({ clientAdapterId: 'opencode' })
+  const transformed = engine.transformRequest({
+    request: request({
+      messages: [{ role: 'user', content: 'Use the read tool exactly once.' }],
+      tools: [
+        {
+          type: 'function',
+          function: { name: 'read', parameters: { type: 'object', properties: {} } },
+        },
+        {
+          type: 'function',
+          function: { name: 'bash', parameters: { type: 'object', properties: {} } },
+        },
+      ],
+    }),
+    provider,
+    actualModel: 'Qwen3.6-Plus',
+  })
+
+  assert.equal(transformed.plan.toolChoiceMode, 'forced')
+  assert.equal(transformed.plan.forcedToolName, 'read')
+  assert.deepEqual(transformed.plan.tools.map((tool) => tool.name), ['read'])
 })
 
 test('client prompt signatures do not override selected adapter', () => {
@@ -311,7 +453,7 @@ test('managed tool parsing strips internal raw protocol metadata from the public
     choices: [{
       message: {
         role: 'assistant',
-        content: '<|CHAT2API|tool_calls><|CHAT2API|invoke name="default_api:read_file"><|CHAT2API|parameter name="filePath"><![CDATA[/tmp/a]]></|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>',
+        content: '<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="default_api:read_file"><|FLUXMELD|parameter name="filePath"><![CDATA[/tmp/a]]></|FLUXMELD|parameter></|FLUXMELD|invoke></|FLUXMELD|tool_calls>',
       },
       finish_reason: 'stop',
     }],
@@ -628,7 +770,7 @@ test('tool response validation rejects leaked managed protocol markers', () => {
               confidence_score: 61,
               cancel_pending_trigger: false,
               lean_direction: 'neutral',
-              reason: 'stale </|CHAT2API|parameter> evidence',
+              reason: 'stale </|FLUXMELD|parameter> evidence',
             }),
           },
         }],

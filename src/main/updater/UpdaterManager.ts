@@ -3,6 +3,8 @@ import { autoUpdater, UpdateInfo } from 'electron-updater'
 import { EventEmitter } from 'events'
 import { IpcChannels } from '../ipc/channels'
 
+const UPDATE_FEED_URL = process.env.FLUXMELD_UPDATE_URL?.trim()
+
 export interface DownloadProgress {
   percent: number
   bytesPerSecond: number
@@ -64,6 +66,11 @@ export class UpdaterManager extends EventEmitter {
   }
 
   private setupAutoUpdater(): void {
+    if (UPDATE_FEED_URL) {
+      autoUpdater.setFeedURL({ provider: 'generic', url: UPDATE_FEED_URL })
+    } else {
+      console.log('[Updater] Update feed is not configured for this FluxMeld build')
+    }
     autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.allowPrerelease = false
@@ -143,6 +150,13 @@ export class UpdaterManager extends EventEmitter {
 
     if (this.status.downloading) {
       console.log('[Updater] Download in progress, cannot check for updates')
+      return
+    }
+
+    if (!UPDATE_FEED_URL) {
+      const error = 'Updates are not configured for this FluxMeld build.'
+      this.updateStatus({ checking: false, error })
+      this.sendToRenderer(IpcChannels.APP_UPDATE_ERROR, { message: error })
       return
     }
 

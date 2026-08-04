@@ -1,9 +1,9 @@
 ---
-name: chat2api-tool-client-replay
-description: Use when replaying sanitized client tool-calling fixtures against Chat2API with client-specific pass/fail rules.
+name: fluxmeld-tool-client-replay
+description: Use when replaying sanitized client tool-calling fixtures against FluxMeld with client-specific pass/fail rules.
 ---
 
-# Chat2API Tool Client Replay
+# FluxMeld Tool Client Replay
 
 Use this skill to replay fixture scenarios for clients such as Cherry Studio, generic OpenAI tools, or unknown HAR-derived clients.
 
@@ -16,8 +16,8 @@ Use this skill to replay fixture scenarios for clients such as Cherry Studio, ge
 ## Commands
 
 ```bash
-CHAT2API_API_KEY=sk_xxx \
-node skills/chat2api-tool-client-replay/scripts/replay-client-fixture.mjs \
+FLUXMELD_API_KEY=sk_xxx \
+node skills/fluxmeld-tool-client-replay/scripts/replay-client-fixture.mjs \
   --fixture backup/har/cherry-studio-fixture.json \
   --profile cherry-studio \
   --model deepseek-v4-flash

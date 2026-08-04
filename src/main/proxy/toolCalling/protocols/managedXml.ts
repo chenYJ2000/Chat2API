@@ -13,8 +13,8 @@ import {
   toolNames,
 } from './shared.ts'
 
-const CHAT2API_START = '<|CHAT2API|tool_calls>'
-const CHAT2API_END = '</|CHAT2API|tool_calls>'
+const FLUXMELD_START = '<|FLUXMELD|tool_calls>'
+const FLUXMELD_END = '</|FLUXMELD|tool_calls>'
 const XML_START = '<tool_calls>'
 
 export const managedXmlProtocol: ToolProtocolAdapter = {
@@ -27,27 +27,27 @@ Use only the exact tool names listed below. Do not rename, camelCase, translate,
 
 ${renderToolList(tools)}
 
-When calling tools, respond with exactly one Chat2API XML block. Do not include reasoning, prose, markdown fences, or draft tool calls.
+When calling tools, respond with exactly one FluxMeld XML block. Do not include reasoning, prose, markdown fences, or draft tool calls.
 
 Every top-level JSON argument MUST be a separate parameter. Preserve JSON types: strings may be plain CDATA text; numbers, booleans, arrays, objects, and null must use valid JSON values.
 
 Multi-field structure example (field names are illustrative only; use the selected tool's real schema):
 
-<|CHAT2API|tool_calls><|CHAT2API|invoke name="exact_tool_name"><|CHAT2API|parameter name="field_one"><![CDATA[text value]]></|CHAT2API|parameter><|CHAT2API|parameter name="field_two"><![CDATA[false]]></|CHAT2API|parameter><|CHAT2API|parameter name="field_three"><![CDATA[{"nested":"value"}]]></|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>
+<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="exact_tool_name"><|FLUXMELD|parameter name="field_one"><![CDATA[text value]]></|FLUXMELD|parameter><|FLUXMELD|parameter name="field_two"><![CDATA[false]]></|FLUXMELD|parameter><|FLUXMELD|parameter name="field_three"><![CDATA[{"nested":"value"}]]></|FLUXMELD|parameter></|FLUXMELD|invoke></|FLUXMELD|tool_calls>
 
 For a tool with arguments {"pair":"BTC/USDT","confidence":80,"cancel":false}, the required shape is:
 
-<|CHAT2API|tool_calls><|CHAT2API|invoke name="exact_tool_name"><|CHAT2API|parameter name="pair"><![CDATA[BTC/USDT]]></|CHAT2API|parameter><|CHAT2API|parameter name="confidence"><![CDATA[80]]></|CHAT2API|parameter><|CHAT2API|parameter name="cancel"><![CDATA[false]]></|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>
+<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="exact_tool_name"><|FLUXMELD|parameter name="pair"><![CDATA[BTC/USDT]]></|FLUXMELD|parameter><|FLUXMELD|parameter name="confidence"><![CDATA[80]]></|FLUXMELD|parameter><|FLUXMELD|parameter name="cancel"><![CDATA[false]]></|FLUXMELD|parameter></|FLUXMELD|invoke></|FLUXMELD|tool_calls>
 
 Never place the entire arguments object under a synthetic "argument" key. Never copy these illustrative field names unless they exist in the selected tool's schema.
 
-Tool results will be provided as Chat2API XML result blocks:
+Tool results will be provided as FluxMeld XML result blocks:
 
-<|CHAT2API|tool_result tool_call_id="call_id"><![CDATA[result]]></|CHAT2API|tool_result>`
+<|FLUXMELD|tool_result tool_call_id="call_id"><![CDATA[result]]></|FLUXMELD|tool_result>`
   },
 
   detectStart(buffer) {
-    return detectMarkers(buffer, [CHAT2API_START, XML_START])
+    return detectMarkers(buffer, [FLUXMELD_START, XML_START])
   },
 
   parse(content: string, context: ToolParseContext) {
@@ -60,9 +60,9 @@ Tool results will be provided as Chat2API XML result blocks:
     const toolCalls: ReturnType<typeof buildToolCall>[] = []
 
     parseBlocks(parseable, {
-      blockPattern: /<\|CHAT2API\|tool_calls\b[^>]*>([\s\S]*?)<\/\|CHAT2API\|tool_calls>/g,
-      invokePattern: /<\|CHAT2API\|invoke\b[^>]*\bname\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/\|CHAT2API\|invoke>/g,
-      parameterPattern: /<\|CHAT2API\|parameter\b[^>]*\bname\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/\|CHAT2API\|parameter>/g,
+      blockPattern: /<\|FLUXMELD\|tool_calls\b[^>]*>([\s\S]*?)<\/\|FLUXMELD\|tool_calls>/g,
+      invokePattern: /<\|FLUXMELD\|invoke\b[^>]*\bname\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/\|FLUXMELD\|invoke>/g,
+      parameterPattern: /<\|FLUXMELD\|parameter\b[^>]*\bname\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/\|FLUXMELD\|parameter>/g,
       rawMatches,
       invalidToolNames,
       malformedToolNames,
@@ -113,16 +113,16 @@ Tool results will be provided as Chat2API XML result blocks:
       const params = Object.entries(args)
         .map(([name, value]) => {
           const text = typeof value === 'string' ? value : JSON.stringify(value)
-          return `<|CHAT2API|parameter name="${escapeXmlAttribute(name)}"><![CDATA[${text}]]></|CHAT2API|parameter>`
+          return `<|FLUXMELD|parameter name="${escapeXmlAttribute(name)}"><![CDATA[${text}]]></|FLUXMELD|parameter>`
         })
         .join('')
-      return `<|CHAT2API|invoke name="${escapeXmlAttribute(call.name)}">${params}</|CHAT2API|invoke>`
+      return `<|FLUXMELD|invoke name="${escapeXmlAttribute(call.name)}">${params}</|FLUXMELD|invoke>`
     })
-    return `${CHAT2API_START}${invokes.join('')}${CHAT2API_END}`
+    return `${FLUXMELD_START}${invokes.join('')}${FLUXMELD_END}`
   },
 
   formatToolResult(result) {
-    return `<|CHAT2API|tool_result tool_call_id="${escapeXmlAttribute(result.toolCallId)}"><![CDATA[${result.content}]]></|CHAT2API|tool_result>`
+    return `<|FLUXMELD|tool_result tool_call_id="${escapeXmlAttribute(result.toolCallId)}"><![CDATA[${result.content}]]></|FLUXMELD|tool_result>`
   },
 }
 

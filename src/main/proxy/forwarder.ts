@@ -446,7 +446,7 @@ export class RequestForwarder {
     content: string,
     transformed: ToolCallingTransformResult,
   ): string | undefined {
-    const match = /(?:<\|CHAT2API\|invoke|<invoke)\b[^>]*\bname\s*=\s*["']([^"']+)["']/i.exec(content)
+    const match = /(?:<\|FLUXMELD\|invoke|<invoke)\b[^>]*\bname\s*=\s*["']([^"']+)["']/i.exec(content)
     const name = match?.[1]?.trim()
     return name && transformed.plan.allowedToolNames.has(name) ? name : undefined
   }

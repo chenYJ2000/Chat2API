@@ -1,4 +1,4 @@
-name: Release
+name: Build tagged artifacts
 
 on:
   push:
@@ -45,23 +45,27 @@ jobs:
       - name: Build application
         run: npm run build
 
-      - name: Build and Publish (macOS)
+      - name: Build macOS artifact
         if: matrix.os == 'macos-latest'
-        run: npx electron-builder --mac --${{ matrix.arch }} --publish=always
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish=never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
 
-      - name: Build and Publish (Windows)
+      - name: Build Windows artifact
         if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win --${{ matrix.arch }} --publish=always
+        run: npx electron-builder --win --${{ matrix.arch }} --publish=never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
 
-      - name: Build and Publish (Linux)
+      - name: Build Linux artifact
         if: matrix.os == 'ubuntu-latest'
-        run: npx electron-builder --linux --${{ matrix.arch }} --publish=always
+        run: npx electron-builder --linux --${{ matrix.arch }} --publish=never
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fluxmeld-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/**
+          if-no-files-found: error

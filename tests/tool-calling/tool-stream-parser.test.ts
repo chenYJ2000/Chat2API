@@ -70,17 +70,17 @@ test('XML marker split across chunks emits a tool call', () => {
   assert.equal(chunks.at(-1)?.choices[0].delta.tool_calls[0].function.name, 'default_api:read_file')
 })
 
-test('Chat2API XML marker split across chunks emits a tool call', () => {
+test('FluxMeld XML marker split across chunks emits a tool call', () => {
   const parser = new ToolStreamParser(plan('managed_xml'))
-  assert.deepEqual(parser.push('<|CHAT2API|tool_', baseChunk), [])
-  const chunks = parser.push('calls><|CHAT2API|invoke name="default_api:read_file"><|CHAT2API|parameter name="filePath">/tmp/a</|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>', baseChunk)
+  assert.deepEqual(parser.push('<|FLUXMELD|tool_', baseChunk), [])
+  const chunks = parser.push('calls><|FLUXMELD|invoke name="default_api:read_file"><|FLUXMELD|parameter name="filePath">/tmp/a</|FLUXMELD|parameter></|FLUXMELD|invoke></|FLUXMELD|tool_calls>', baseChunk)
 
   assert.equal(chunks.at(-1)?.choices[0].delta.tool_calls[0].function.name, 'default_api:read_file')
 })
 
-test('partial Chat2API start marker is reported as buffered so stream handlers do not leak it', () => {
+test('partial FluxMeld start marker is reported as buffered so stream handlers do not leak it', () => {
   const parser = new ToolStreamParser(plan('managed_xml'))
-  const chunks = parser.push('<|CHAT2API|tool_calls', baseChunk)
+  const chunks = parser.push('<|FLUXMELD|tool_calls', baseChunk)
 
   assert.deepEqual(chunks, [])
   assert.equal(parser.isBuffering(), true)

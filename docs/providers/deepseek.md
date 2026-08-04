@@ -25,5 +25,5 @@
 
 1. 登录 `chat.deepseek.com`。
 2. 打开 DevTools -> Application -> Local Storage，复制用户 token。
-3. 在 Chat2API Manager 的供应商管理中添加 DeepSeek 账号，填入 `token`。
+3. 在 FluxMeld Manager 的供应商管理中添加 DeepSeek 账号，填入 `token`。
 4. 在模型管理中保留默认模型；如需搜索/思考别名，使用全局模型映射指向默认模型。

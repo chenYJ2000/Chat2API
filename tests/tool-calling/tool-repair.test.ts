@@ -54,6 +54,23 @@ test('bounded repair includes required missing calls and remains single-attempt'
     ...invalidResult,
     toolCallingFailure: { code: 'missing_required_call', repairable: false },
   }, { ...request, tool_choice: 'auto' }, false), false)
+  const openCodeRefusal = {
+    ...invalidResult,
+    toolCallingFailure: {
+      code: 'missing_required_call' as const,
+      toolName: 'signal_wait',
+      repairable: true,
+      diagnostics: { toolRefusalDetected: true } as any,
+    },
+  }
+  assert.equal(
+    shouldAttemptToolRepair(openCodeRefusal, { ...request, tool_choice: 'auto' }, false),
+    true,
+  )
+  assert.deepEqual(
+    createToolRepairRequest({ ...request, tool_choice: 'auto' }, openCodeRefusal).tool_choice,
+    { type: 'function', function: { name: 'signal_wait' } },
+  )
   assert.equal(shouldAttemptToolRepair({
     ...invalidResult,
     toolCallingFailure: { code: 'upstream_incomplete_response', repairable: true },
@@ -92,7 +109,7 @@ test('repair request preserves schema and forces one known tool with reasoning d
     function: { name: 'signal_wait' },
   })
   assert.match(String(repaired.messages.at(-1)?.content), /strict JSON Schema validation/)
-  assert.match(String(repaired.messages.at(-1)?.content), /exactly one final Chat2API tool_calls block/)
+  assert.match(String(repaired.messages.at(-1)?.content), /exactly one final FluxMeld tool_calls block/)
 })
 
 test('repair prompt includes the rejected candidate, exact type issue, and complete target schema', () => {

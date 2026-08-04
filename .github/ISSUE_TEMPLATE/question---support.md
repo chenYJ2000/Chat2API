@@ -1,6 +1,6 @@
 ---
 name: Question & Support
-about: Ask a question or get help with Chat2API
+about: Ask a question or get help with FluxMeld
 title: "[QUESTION]"
 labels: ''
 assignees: ''
@@ -22,7 +22,7 @@ assignees: ''
 
 | 项目 | 值 |
 |---|---|
-| Chat2API 版本 |  |
+| FluxMeld 版本 |  |
 | 操作系统及版本 |  |
 | 系统架构 | arm64 / x64 |
 
@@ -53,4 +53,4 @@ assignees: ''
 <!-- 如有报错信息或截图，请粘贴在此处，注意脱敏 Token 等敏感信息 -->
 
 ## 请求日志（如适用）
-<!-- 贴入 `~/.chat2api/logs/` 下的相关日志，注意脱敏 -->
+<!-- 贴入 `~/.fluxmeld/logs/` 下的相关日志，注意脱敏 -->

@@ -76,11 +76,11 @@ function argumentsFor(trace: typeof traces[number]) {
 function outputVariant(index: number, args: ReturnType<typeof argumentsFor>): string {
   const json = JSON.stringify(args)
   const parameters = Object.entries(args).map(([name, value]) => (
-    `<|CHAT2API|parameter name="${name}"><![CDATA[${typeof value === 'string' ? value : JSON.stringify(value)}]]></|CHAT2API|parameter>`
+    `<|FLUXMELD|parameter name="${name}"><![CDATA[${typeof value === 'string' ? value : JSON.stringify(value)}]]></|FLUXMELD|parameter>`
   )).join('')
   const variants = [
-    `<|CHAT2API|tool_calls><|CHAT2API|invoke name="signal_wait">${parameters}</|CHAT2API|invoke></|CHAT2API|tool_calls>`,
-    `\`\`\`xml\n<|CHAT2API|tool_calls><|CHAT2API|invoke name="signal_wait"><|CHAT2API|parameter name="arguments"><![CDATA[${json}]]></|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>\n\`\`\``,
+    `<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="signal_wait">${parameters}</|FLUXMELD|invoke></|FLUXMELD|tool_calls>`,
+    `\`\`\`xml\n<|FLUXMELD|tool_calls><|FLUXMELD|invoke name="signal_wait"><|FLUXMELD|parameter name="arguments"><![CDATA[${json}]]></|FLUXMELD|parameter></|FLUXMELD|invoke></|FLUXMELD|tool_calls>\n\`\`\``,
     `<tool_calls><invoke name="signal_wait">${json}</invoke></tool_calls>`,
     `<tool_calls><invoke name="signal_wait"><parameter name="pair">${args.pair}</parameter>${JSON.stringify({ ...args, pair: undefined }, (_key, value) => value)}</invoke></tool_calls>`,
     `[function_calls][call:signal_wait]${json}[/call][/function_calls]`,
@@ -133,7 +133,7 @@ for (const trace of traces) {
 
       assert.deepEqual(JSON.parse(nonStreamArguments), expected)
       assert.equal(streamedArguments, nonStreamArguments)
-      assert.equal(nonStreamArguments.includes('CHAT2API'), false)
+      assert.equal(nonStreamArguments.includes('FLUXMELD'), false)
     }
   })
 }

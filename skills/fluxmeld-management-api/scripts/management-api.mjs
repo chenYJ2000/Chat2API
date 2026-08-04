@@ -2,8 +2,8 @@
 
 import fs from 'node:fs'
 
-const baseUrl = (process.env.CHAT2API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/$/, '')
-const managementSecret = process.env.CHAT2API_MGMT_SECRET || ''
+const baseUrl = (process.env.FLUXMELD_BASE_URL || 'http://127.0.0.1:8080').replace(/\/$/, '')
+const managementSecret = process.env.FLUXMELD_MGMT_SECRET || ''
 const command = process.argv[2] || 'help'
 const args = parseArgs(process.argv.slice(3))
 
@@ -67,7 +67,7 @@ function dryRun(label, extra = {}) {
 }
 
 async function request(path, options = {}) {
-  if (!managementSecret) throw new Error('CHAT2API_MGMT_SECRET is required')
+  if (!managementSecret) throw new Error('FLUXMELD_MGMT_SECRET is required')
   const response = await fetch(`${baseUrl}${path}`, {
     ...options,
     headers: {
@@ -109,7 +109,7 @@ async function createApiKey() {
     method: 'POST',
     body: JSON.stringify({
       name: args.name || `codex-live-test-${Date.now()}`,
-      description: 'temporary key created by Chat2API testing skill',
+      description: 'temporary key created by FluxMeld testing skill',
     }),
   })
   if (!result.ok) throw new Error(`create-api-key failed: ${result.status}`)

@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-const script = 'skills/chat2api-har-tool-fixture/scripts/extract-har-fixtures.mjs'
+const script = 'skills/fluxmeld-har-tool-fixture/scripts/extract-har-fixtures.mjs'
 const absoluteScript = path.resolve(script)
 
 function writeHar(file) {
@@ -44,7 +44,7 @@ function writeHar(file) {
 }
 
 test('extracts sanitized tool fixture from HAR', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat2api-har-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fluxmeld-har-'))
   const har = path.join(dir, 'client.har')
   const out = path.join(dir, 'fixture.json')
   writeHar(har)
@@ -66,7 +66,7 @@ test('extracts sanitized tool fixture from HAR', () => {
 })
 
 test('uses env fallback, exact chat path selection, and body secret redaction', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat2api-har-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fluxmeld-har-'))
   const har = path.join(dir, 'client.har')
   const out = path.join(dir, 'fixture.json')
   const harBody = {
@@ -113,8 +113,8 @@ test('uses env fallback, exact chat path selection, and body secret redaction', 
     encoding: 'utf8',
     env: {
       ...process.env,
-      CHAT2API_HAR: har,
-      CHAT2API_CLIENT_PROFILE: 'env-client',
+      FLUXMELD_HAR: har,
+      FLUXMELD_CLIENT_PROFILE: 'env-client',
     },
   })
 
@@ -131,7 +131,7 @@ test('uses env fallback, exact chat path selection, and body secret redaction', 
 })
 
 test('redacts secret values from retained allowed headers', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat2api-har-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fluxmeld-har-'))
   const har = path.join(dir, 'client.har')
   const out = path.join(dir, 'fixture.json')
   const harBody = {
@@ -165,7 +165,7 @@ test('redacts secret values from retained allowed headers', () => {
 })
 
 test('redacts token-like strings in request bodies', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat2api-har-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fluxmeld-har-'))
   const har = path.join(dir, 'client.har')
   const out = path.join(dir, 'fixture.json')
   const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
@@ -210,7 +210,7 @@ test('redacts token-like strings in request bodies', () => {
 })
 
 test('default output path slugifies path-like client profile', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chat2api-har-'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fluxmeld-har-'))
   const har = path.join(dir, 'client.har')
   writeHar(har)
 

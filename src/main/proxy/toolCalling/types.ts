@@ -74,6 +74,8 @@ export interface ToolCallDiagnostics {
   invalidToolNames?: string[]
   malformedToolNames?: string[]
   fencedBlockDetected?: boolean
+  toolRefusalDetected?: boolean
+  refusedToolName?: string
   rawContentPreview?: string
   rawMatchPreviews?: string[]
   parsedArgumentsPreview?: Array<{ name: string; arguments: string }>

@@ -91,7 +91,7 @@ export class TrayManager {
     const icon = loadAppIcon()
 
     this.tray = new Tray(icon)
-    this.tray.setToolTip('Chat2API - AI Proxy Manager')
+    this.tray.setToolTip('FluxMeld - AI Proxy Manager')
 
     this.setupEventHandlers()
     this.updateContextMenu()
@@ -195,7 +195,7 @@ export class TrayManager {
         click: () => this.openDashboard(),
       },
       {
-        label: isZh ? '退出 Chat2API' : 'Quit Chat2API',
+        label: isZh ? '退出 FluxMeld' : 'Quit FluxMeld',
         click: () => {
           this.destroy()
           ;(app as any).isQuitting = true

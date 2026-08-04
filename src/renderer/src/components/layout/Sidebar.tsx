@@ -18,6 +18,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useNavigationStore } from '@/stores/navigationStore'
+import logoIcon from '@/assets/fluxmeld-mark.svg'
 import {
   Dialog,
   DialogContent,
@@ -139,21 +140,31 @@ export function Sidebar() {
     <>
       <aside
         className={cn(
-          'glass-sidebar flex flex-col transition-all duration-300 ease-in-out',
-          sidebarCollapsed ? 'w-[72px]' : 'w-64'
+          'command-rail flex flex-col transition-all duration-300 ease-in-out',
+          sidebarCollapsed ? 'w-[84px]' : 'w-[248px]'
         )}
       >
-        <nav className="flex-1 p-3 space-y-1 overflow-x-hidden overflow-y-auto pt-5">
+        <div className={cn('command-brand', sidebarCollapsed && 'is-collapsed')}>
+          <div className="command-brand-mark">
+            <img src={logoIcon} alt="FluxMeld" className="h-7 w-7 object-contain" />
+          </div>
+          <div className={cn('command-brand-copy', sidebarCollapsed && 'is-collapsed')}>
+            <span className="command-brand-name">FluxMeld</span>
+            <span className="command-brand-subtitle">CONTROL PLANE</span>
+          </div>
+        </div>
+
+        <nav className="command-nav flex-1 overflow-x-hidden overflow-y-auto">
+          {!sidebarCollapsed && <p className="command-nav-label">WORKSPACE</p>}
           {navItems.map((item) => (
             <NavButton key={item.href} item={item} />
           ))}
         </nav>
 
-        <div className="mx-4 border-t border-[var(--glass-border)] opacity-50" />
-
-        <div className="p-3 overflow-hidden flex justify-center">
+        <div className="command-rail-footer">
+          {!sidebarCollapsed && <span className="command-rail-version">LOCAL RELAY</span>}
           <button
-            className="sidebar-collapse-btn"
+            className="command-rail-toggle"
             onClick={toggleSidebar}
             aria-label={sidebarCollapsed ? t('settings.sidebarCollapsedHelp') : t('settings.sidebarCollapsedHelp')}
             title={sidebarCollapsed ? t('settings.sidebarCollapsedHelp') : t('settings.sidebarCollapsedHelp')}

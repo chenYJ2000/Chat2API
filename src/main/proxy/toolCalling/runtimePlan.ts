@@ -29,7 +29,9 @@ export function buildToolCallingRuntimePlan(input: {
     profile.managedSupport,
   )
   const mode = disabledReason ? 'disabled' : 'managed'
-  const protocol = profile.preferredManagedProtocol
+  const protocol = input.clientRequest.preferredProtocolByProvider?.[input.providerId]
+    ?? input.clientRequest.preferredProtocol
+    ?? profile.preferredManagedProtocol
   const shouldInjectPrompt = mode === 'managed'
   const shouldParseResponse = mode === 'managed'
 

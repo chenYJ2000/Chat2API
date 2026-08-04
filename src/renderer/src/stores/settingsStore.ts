@@ -151,7 +151,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
     }),
     {
-      name: 'chat2api-settings',
+      name: 'fluxmeld-settings',
       onRehydrateStorage: () => (state) => {
         if (state?.language) {
           i18n.changeLanguage(state.language)

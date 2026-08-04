@@ -28,6 +28,27 @@ export function setLatestToolCallingSmokeResult(result: ToolCallingSmokeResult):
 }
 
 export function buildSmokeFixture(clientAdapterId: ToolClientAdapterId) {
+  if (clientAdapterId === 'opencode') {
+    return {
+      model: 'tool-smoke-test',
+      stream: false,
+      messages: [{ role: 'user', content: 'Use the bash tool to run printf OPENCODE_SMOKE.' }],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'bash',
+          description: 'Run a shell command',
+          parameters: {
+            type: 'object',
+            properties: { command: { type: 'string' } },
+            required: ['command'],
+          },
+        },
+      }],
+      tool_choice: { type: 'function', function: { name: 'bash' } },
+    }
+  }
+
   return {
     model: 'tool-smoke-test',
     stream: false,

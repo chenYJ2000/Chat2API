@@ -2,10 +2,12 @@ import type { ToolClientAdapterId } from '../../../../shared/toolCalling.ts'
 import type { ToolClientAdapter } from './types.ts'
 import { standardOpenAiToolsAdapter } from './standardOpenAiTools.ts'
 import { cherryStudioMcpAdapter } from './cherryStudioMcp.ts'
+import { openCodeAdapter } from './openCode.ts'
 
 const adapters = new Map<string, ToolClientAdapter>([
   [standardOpenAiToolsAdapter.id, standardOpenAiToolsAdapter],
   [cherryStudioMcpAdapter.id, cherryStudioMcpAdapter],
+  [openCodeAdapter.id, openCodeAdapter],
 ])
 
 export function getToolClientAdapter(clientAdapterId: ToolClientAdapterId): ToolClientAdapter {
@@ -29,5 +31,5 @@ export function getToolClientAdapter(clientAdapterId: ToolClientAdapterId): Tool
 }
 
 export function listToolClientAdapters(): ToolClientAdapter[] {
-  return [standardOpenAiToolsAdapter, cherryStudioMcpAdapter]
+  return [standardOpenAiToolsAdapter, cherryStudioMcpAdapter, openCodeAdapter]
 }

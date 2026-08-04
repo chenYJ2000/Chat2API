@@ -3,7 +3,7 @@ name: Bug report
 about: Create a report to help us improve
 title: "[BUG]"
 labels: bug
-assignees: xiaoY233
+assignees: ''
 
 ---
 
@@ -31,7 +31,7 @@ assignees: xiaoY233
 ### 基本信息
 | 项目 | 值 |
 |---|---|
-| Chat2API 版本 | <!-- 如 v1.2.0，可在 About 页面查看 --> |
+| FluxMeld 版本 | <!-- 如 v1.2.0，可在 About 页面查看 --> |
 | 操作系统及版本 | <!-- 如 macOS 15.3 / Windows 11 23H2 / Ubuntu 24.04 --> |
 | 系统架构 | <!-- arm64 / x64 --> |
 
@@ -72,4 +72,4 @@ assignees: xiaoY233
 <!-- 是否配置了自定义 HTTP Headers（如开启 web search、thinking mode、deep research 等） -->
 
 ## 请求日志
-<!-- 请贴入 `~/.chat2api/logs/` 下的相关日志内容，或 Dashboard 中的请求记录，注意脱敏 Token 等敏感信息 -->
+<!-- 请贴入 `~/.fluxmeld/logs/` 下的相关日志内容，或 Dashboard 中的请求记录，注意脱敏 Token 等敏感信息 -->

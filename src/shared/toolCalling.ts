@@ -1,5 +1,5 @@
 export type ToolCallingModeSetting = 'off' | 'auto' | 'force'
-export type ToolClientAdapterId = 'standard-openai-tools' | 'cherry-studio-mcp' | string
+export type ToolClientAdapterId = 'standard-openai-tools' | 'cherry-studio-mcp' | 'opencode' | string
 export type ToolSmokeCategory =
   | 'pass'
   | 'no_tools_received'
@@ -30,7 +30,7 @@ export interface LegacyToolPromptConfig {
 }
 
 export interface ToolClientAdapterMeta {
-  id: 'standard-openai-tools' | 'cherry-studio-mcp'
+  id: 'standard-openai-tools' | 'cherry-studio-mcp' | 'opencode'
   label: string
   descriptionKey: string
   smokeTestKind: 'openai-tools' | 'cherry-mcp-weather'
@@ -68,6 +68,12 @@ export const P0_TOOL_CLIENT_ADAPTERS: ToolClientAdapterMeta[] = [
     descriptionKey: 'toolCalling.clients.cherryStudioMcpDesc',
     smokeTestKind: 'cherry-mcp-weather',
   },
+  {
+    id: 'opencode',
+    label: 'OpenCode',
+    descriptionKey: 'toolCalling.clients.openCodeDesc',
+    smokeTestKind: 'openai-tools',
+  },
 ]
 
 export const P0_TOOL_PROVIDER_SUPPORT: ToolProviderSupportMeta[] = [
@@ -87,7 +93,7 @@ function isMode(value: unknown): value is ToolCallingModeSetting {
 }
 
 function isClientAdapterId(value: unknown): value is ToolClientAdapterId {
-  return value === 'standard-openai-tools' || value === 'cherry-studio-mcp'
+  return value === 'standard-openai-tools' || value === 'cherry-studio-mcp' || value === 'opencode'
 }
 
 export function normalizeToolCallingConfig(value: unknown): ToolCallingConfig {

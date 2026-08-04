@@ -1,13 +1,12 @@
-# Chat2API
+# FluxMeld
 
 <p align="center">
-  <img src="build/icons.png" alt="Chat2API Logo" width="128" height="128">
+  <img src="build/icons.png" alt="FluxMeld Logo" width="128" height="128">
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Fork-v1.4.0--fork.1-blue?style=flat-square&logo=github" alt="Fork version">
+  <img src="https://img.shields.io/badge/Project-FluxMeld-6B6CFF?style=flat-square" alt="FluxMeld">
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue?style=flat-square" alt="License">
-  <a href="https://github.com/chenYJ2000/Chat2API/actions/workflows/ci.yml"><img src="https://github.com/chenYJ2000/Chat2API/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <br>
   <a href="https://www.electronjs.org/"><img src="https://img.shields.io/badge/Electron-33+-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron"></a>
   <a href="https://react.dev/"><img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React"></a>
@@ -16,7 +15,7 @@
 </p>
 
 <p align="center">
-  <strong><a href="README_CN.md">中文</a> | <a href="https://chat2api-doc.vercel.app/">Official Website</a> | <a href="https://chat2api-doc.vercel.app/docs">Documentation</a></strong>
+  <strong><a href="README_CN.md">中文</a></strong>
 </p>
 
 <p align="center">
@@ -24,15 +23,14 @@
 </p>
 
 <p align="center">
-  Chat2API enables zero-cost access to leading AI models by leveraging official web UIs. It supports providers such as DeepSeek, GLM, Kimi, MiniMax, Qwen, and Z.ai, and seamlessly integrates with tools like openlcaw, Cline, and Roo-Code — making any OpenAI-compatible client work out of the box.
+  FluxMeld is an open-source desktop gateway for managing multiple AI providers through an OpenAI-compatible API. It supports providers such as DeepSeek, GLM, Kimi, MiniMax, Qwen, and Z.ai, and integrates with OpenAI-compatible clients.
 </p>
 
 > [!IMPORTANT]
-> This repository is an enhanced fork of the original
-> [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API). Sincere thanks to
-> [xiaoY233](https://github.com/xiaoY233) and every upstream contributor for creating and
-> open-sourcing Chat2API. The original Git history, copyright notice, and GPL-3.0 license
-> are retained. See the [complete fork change list](FORK_CHANGES.md) and [NOTICE](NOTICE).
+> FluxMeld is a GPL-3.0 derivative of the original
+> [xiaoY233/Chat2API](https://github.com/xiaoY233/Chat2API). The original Git history,
+> copyright notices, and GPL-3.0 license are retained. See [NOTICE](NOTICE),
+> [FLUXMELD_CHANGES.md](FLUXMELD_CHANGES.md), and [FORK_CHANGES.md](FORK_CHANGES.md).
 
 ![Product Preview](docs/screenshots/preview.png)
 
@@ -73,13 +71,11 @@ Provider adaptation notes and manual model-addition guides are in [docs/provider
 
 ## 📥 Installation
 
-### Fork Releases
+### FluxMeld Releases
 
-This fork currently publishes source code only; no fork-specific prebuilt binaries are
-available yet. The
-[original project releases](https://github.com/xiaoY233/Chat2API/releases) contain upstream
-binaries and do **not** include the fork-specific changes documented here. To use this
-fork's changes, build from source below.
+This local project is ready to publish source and build release artifacts. Configure a new
+FluxMeld repository remote before publishing; upstream Chat2API releases do **not** include
+FluxMeld changes.
 
 ### Build from Source
 
@@ -90,9 +86,9 @@ fork's changes, build from source below.
 - Git
 
 ```bash
-# Clone the repository
-git clone https://github.com/chenYJ2000/Chat2API.git
-cd Chat2API
+# Clone your FluxMeld repository after publication
+git clone <your-fluxmeld-repository-url>
+cd FluxMeld
 
 # Install dependencies
 npm install
@@ -115,7 +111,7 @@ npm run build:all          # Build for all platforms
 
 ### Step 1: Launch the App
 
-After installation, launch Chat2API. You'll see the main dashboard.
+After installation, launch FluxMeld. You'll see the main dashboard.
 
 ### Step 2: Add a Provider
 
@@ -198,7 +194,7 @@ For security, you can enable API Key authentication:
 ## 🏗️ Architecture
 
 ```
-Chat2API/
+FluxMeld/
 ├── src/
 │   ├── main/                    # Electron main process
 │   │   ├── index.ts            # App entry point
@@ -230,7 +226,7 @@ Chat2API/
 
 ## 📁 Data Storage
 
-Application data is stored in `~/.chat2api/` directory:
+Application data is stored in `~/.fluxmeld/` directory:
 
 - `config.json` - Application configuration
 - `providers.json` - Provider settings
@@ -244,14 +240,13 @@ Application data is stored in `~/.chat2api/` directory:
 Due to macOS security mechanisms, apps downloaded outside the App Store may trigger this warning. Run the following command to fix it:
 
 ```bash
-sudo xattr -rd com.apple.quarantine "/Applications/Chat2API.app"
+sudo xattr -rd com.apple.quarantine "/Applications/FluxMeld.app"
 ```
 
 ### How to update?
 
-The in-app updater follows the repository configured by the build maintainer. Original
-upstream releases do not include this fork's enhancements; source users should pull this
-repository and rebuild.
+The in-app updater is intentionally disabled until a FluxMeld maintainer configures a new
+release feed. Source users can pull the FluxMeld repository and rebuild.
 
 ## 🤝 Contributing
 
@@ -266,7 +261,9 @@ repository and rebuild.
 GNU General Public License v3.0. See [LICENSE](LICENSE) for details.
 
 Upstream attribution and the relationship to the original project are recorded in
-[NOTICE](NOTICE). Fork-specific changes are listed in [FORK_CHANGES.md](FORK_CHANGES.md).
+[NOTICE](NOTICE). FluxMeld identity changes are listed in
+[FLUXMELD_CHANGES.md](FLUXMELD_CHANGES.md); inherited fork changes remain in
+[FORK_CHANGES.md](FORK_CHANGES.md).
 
 This means:
 

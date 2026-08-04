@@ -62,13 +62,13 @@ export function DataManagement() {
       const config = {
         version: '1.1.2',
         exportedAt: new Date().toISOString(),
-        settings: localStorage.getItem('chat2api-settings'),
+        settings: localStorage.getItem('fluxmeld-settings'),
       }
       const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `chat2api-config-${new Date().toISOString().split('T')[0]}.json`
+      a.download = `fluxmeld-config-${new Date().toISOString().split('T')[0]}.json`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -97,7 +97,7 @@ export function DataManagement() {
       const text = await file.text()
       const config = JSON.parse(text)
       if (config.settings) {
-        localStorage.setItem('chat2api-settings', config.settings)
+        localStorage.setItem('fluxmeld-settings', config.settings)
         toast({
           title: t('common.success'),
           description: t('settings.importSuccess'),

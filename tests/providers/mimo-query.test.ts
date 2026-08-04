@@ -53,9 +53,9 @@ test('Mimo query preserves managed tool call history for follow-up requests', ()
     },
   ] as any)
 
-  assert.match(query, /<\|CHAT2API\|tool_calls>/)
-  assert.match(query, /<\|CHAT2API\|invoke name="weather-test:get_weather">/)
-  assert.match(query, /<\|CHAT2API\|tool_result tool_call_id="call_1">/)
+  assert.match(query, /<\|FLUXMELD\|tool_calls>/)
+  assert.match(query, /<\|FLUXMELD\|invoke name="weather-test:get_weather">/)
+  assert.match(query, /<\|FLUXMELD\|tool_result tool_call_id="call_1">/)
   assert.match(query, /Hangzhou/)
   assert.match(query, /User: 根据工具结果回答/)
 })
@@ -98,7 +98,7 @@ test('Mimo stream converts managed XML into OpenAI tool calls', async () => {
   })
   const stream = Readable.from([
     'event: message\n',
-    'data: {"content":"<|CHAT2API|tool_calls><|CHAT2API|invoke name=\\"weather-test:get_weather\\"><|CHAT2API|parameter name=\\"city\\"><![CDATA[Hangzhou]]></|CHAT2API|parameter></|CHAT2API|invoke></|CHAT2API|tool_calls>"}\n\n',
+    'data: {"content":"<|FLUXMELD|tool_calls><|FLUXMELD|invoke name=\\"weather-test:get_weather\\"><|FLUXMELD|parameter name=\\"city\\"><![CDATA[Hangzhou]]></|FLUXMELD|parameter></|FLUXMELD|invoke></|FLUXMELD|tool_calls>"}\n\n',
   ])
   const handler = new MimoStreamHandler('mimo-v2-flash', 'conv_1', 'separate', transformed.plan)
   const chunks: string[] = []
@@ -111,5 +111,5 @@ test('Mimo stream converts managed XML into OpenAI tool calls', async () => {
   assert.match(output, /"tool_calls"/)
   assert.match(output, /"name":"weather-test:get_weather"/)
   assert.match(output, /"finish_reason":"tool_calls"/)
-  assert.doesNotMatch(output, /CHAT2API/)
+  assert.doesNotMatch(output, /FLUXMELD/)
 })

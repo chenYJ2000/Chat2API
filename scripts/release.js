@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 
 const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
 const readline = require('readline');
 
 const rl = readline.createInterface({
@@ -36,7 +34,7 @@ function validateVersion(version) {
 
 async function main() {
   console.log('='.repeat(50));
-  console.log('Chat2API Release Script');
+  console.log('FluxMeld Release Script');
   console.log('='.repeat(50));
   console.log(`\nCurrent version: ${pkg.version}`);
 
@@ -91,12 +89,21 @@ async function main() {
   const branch = execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim();
   console.log(`Current branch: ${branch}`);
 
+  const remotes = execSync('git remote', { encoding: 'utf8' })
+    .split(/\r?\n/)
+    .filter(Boolean);
+  if (!remotes.includes('origin')) {
+    console.error('Error: configure an origin remote for the new FluxMeld repository before releasing.');
+    rl.close();
+    process.exit(1);
+  }
+
   const confirm = await question(
     `\nThis will:\n` +
     `  1. Update version to ${versionArg}\n` +
     `  2. Create a git tag\n` +
     `  3. Push to GitHub\n` +
-    `  4. Trigger GitHub Actions to build and release\n\n` +
+    `  4. Trigger GitHub Actions to build tagged artifacts\n\n` +
     `Continue? (y/n): `
   );
 
@@ -120,8 +127,8 @@ async function main() {
   console.log('\n' + '='.repeat(50));
   console.log('Release process initiated!');
   console.log('='.repeat(50));
-  console.log('\nGitHub Actions will now build and publish the release.');
-  console.log('Check progress at: https://github.com/chat2api/Chat2API-Manager/actions');
+  console.log('\nGitHub Actions will now build tagged artifacts.');
+  console.log('Check progress in the Actions tab of the configured FluxMeld repository.');
 }
 
 main().catch(console.error);

@@ -10,7 +10,7 @@ export interface ProviderToolProfile {
   formatToolResult(result: NormalizedToolResult): string
 }
 
-const chat2ApiXmlHistoryProfile: Omit<ProviderToolProfile, 'providerId'> = {
+const fluxMeldXmlHistoryProfile: Omit<ProviderToolProfile, 'providerId'> = {
   managedSupport: true,
   supportsNativeTools: false,
   preferredManagedProtocol: 'managed_xml',
@@ -25,25 +25,25 @@ const chat2ApiXmlHistoryProfile: Omit<ProviderToolProfile, 'providerId'> = {
 const profiles: Record<string, ProviderToolProfile> = {
   deepseek: {
     providerId: 'deepseek',
-    ...chat2ApiXmlHistoryProfile,
+    ...fluxMeldXmlHistoryProfile,
   },
   kimi: {
     providerId: 'kimi',
-    ...chat2ApiXmlHistoryProfile,
+    ...fluxMeldXmlHistoryProfile,
   },
   glm: {
     providerId: 'glm',
-    ...chat2ApiXmlHistoryProfile,
+    ...fluxMeldXmlHistoryProfile,
   },
   qwen: {
     providerId: 'qwen',
-    ...chat2ApiXmlHistoryProfile,
+    ...fluxMeldXmlHistoryProfile,
   },
 }
 
 export function getProviderToolProfile(providerId: string): ProviderToolProfile {
   return profiles[providerId] ?? {
     providerId,
-    ...chat2ApiXmlHistoryProfile,
+    ...fluxMeldXmlHistoryProfile,
   }
 }
