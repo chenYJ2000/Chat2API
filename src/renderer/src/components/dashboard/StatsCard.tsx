@@ -31,17 +31,19 @@ export function StatsCard({ title, value, icon: Icon, trend, className }: StatsC
   }
 
   return (
-    <Card hover className={cn('', className)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <div className="h-8 w-8 rounded-lg bg-[var(--accent-primary)]/10 flex items-center justify-center">
-          <Icon className="h-4 w-4 text-[var(--accent-primary)]" />
+    <Card hover className={cn('relay-metric', className)}>
+      <CardHeader className="relay-metric-header">
+        <div>
+          <CardTitle className="relay-metric-label">{title}</CardTitle>
+          <div className="relay-metric-value">{value}</div>
+        </div>
+        <div className="relay-metric-icon">
+          <Icon className="h-4 w-4" />
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+      <CardContent className="relay-metric-footer">
         {trend && (
-          <div className={cn('flex items-center text-xs mt-1', getTrendColor())}>
+          <div className={cn('relay-metric-trend', getTrendColor())}>
             {getTrendIcon()}
             <span className="ml-1">
               {trend.value > 0 ? '+' : ''}

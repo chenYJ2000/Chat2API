@@ -52,16 +52,17 @@ export function RequestChart({ data, className }: RequestChartProps) {
   }, [data])
 
   return (
-    <Card className={cn('', className)}>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-[var(--accent-primary)]/10 flex items-center justify-center">
-            <Activity className="h-4 w-4 text-[var(--accent-primary)]" />
-          </div>
-          {t('dashboard.requestsTrend')}
-        </CardTitle>
+    <Card className={cn('relay-chart', className)}>
+      <CardHeader className="relay-panel-header">
+        <div>
+          <span className="relay-panel-kicker">LIVE TELEMETRY</span>
+          <CardTitle className="relay-panel-title">{t('dashboard.requestsTrend')}</CardTitle>
+        </div>
+        <div className="relay-panel-icon">
+          <Activity className="h-4 w-4" />
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="relay-chart-content">
         <div className="h-[300px] w-full">
           {data.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

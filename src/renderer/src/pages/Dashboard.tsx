@@ -1,7 +1,16 @@
 import { useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Activity, CheckCircle, Clock, Users, RefreshCw } from 'lucide-react'
+import {
+  Activity,
+  CheckCircle2,
+  Clock3,
+  Pause,
+  Play,
+  Radio,
+  RefreshCw,
+  Users,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   StatsCard,
@@ -103,40 +112,64 @@ export function Dashboard() {
     : '127.0.0.1:8080'
 
   return (
-    <div className="dashboard-command space-y-5">
-      <section className="dashboard-hero">
-        <div className="dashboard-hero-copy">
-          <div className="dashboard-hero-eyebrow">
-            <span className={cn('dashboard-live-dot', isProxyRunning && 'is-running')} />
-            {t('dashboard.proxyStatus')}
+    <div className="relay-dashboard space-y-5">
+      <section className={cn('relay-overview', isProxyRunning && 'is-live')}>
+        <div className="relay-overview-beacon" aria-hidden="true">
+          <span className="relay-overview-beacon-core" />
+          <span className="relay-overview-beacon-ring ring-one" />
+          <span className="relay-overview-beacon-ring ring-two" />
+        </div>
+
+        <div className="relay-overview-copy">
+          <div className="relay-overview-kicker">
+            <Radio className="h-3.5 w-3.5" />
+            LOCAL AI ROUTING
           </div>
           <h1>{t('dashboard.title')}</h1>
           <p>{t('dashboard.description')}</p>
+          <div className="relay-overview-tags" aria-label="Relay capabilities">
+            <span>OPENAI COMPATIBLE</span>
+            <span>ACCOUNT POOL</span>
+            <span>TOOL READY</span>
+          </div>
         </div>
 
-        <div className="dashboard-hero-controls">
-          <div className={cn('dashboard-service-card', isProxyRunning && 'is-running')}>
-            <span className="dashboard-service-label">{isProxyRunning ? t('dashboard.running') : t('dashboard.stopped')}</span>
-            <span className="dashboard-service-endpoint">{endpoint}</span>
+        <div className="relay-overview-control">
+          <div className="relay-status-summary">
+            <div className="relay-status-heading">
+              <span className={cn('relay-status-dot', isProxyRunning && 'is-live')} />
+              <span>{isProxyRunning ? t('dashboard.running') : t('dashboard.stopped')}</span>
+            </div>
+            <code>{endpoint}</code>
+            <span className="relay-status-caption">
+              {lastUpdated
+                ? `${t('dashboard.lastUpdated')} · ${new Date(lastUpdated).toLocaleTimeString()}`
+                : t('dashboard.proxyStatus')}
+            </span>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refreshData}
-            disabled={isLoading}
-            className="dashboard-refresh-button"
-          >
-            <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
-            {t('dashboard.refresh')}
-          </Button>
+          <div className="relay-overview-buttons">
+            <Button
+              size="sm"
+              onClick={handleToggleProxy}
+              disabled={isLoading}
+              className={cn('relay-primary-button', isProxyRunning && 'is-live')}
+            >
+              {isProxyRunning ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              {isProxyRunning ? t('quickActions.stopProxy') : t('quickActions.startProxy')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshData}
+              disabled={isLoading}
+              className="relay-secondary-button"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', isLoading && 'animate-spin')} />
+              {t('dashboard.refresh')}
+            </Button>
+          </div>
         </div>
       </section>
-
-      {lastUpdated && (
-        <div className="dashboard-updated-at">
-          {t('dashboard.lastUpdated')}: {new Date(lastUpdated).toLocaleTimeString()}
-        </div>
-      )}
 
       {!isElectron && (
         <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400">
@@ -151,8 +184,9 @@ export function Dashboard() {
         </div>
       )}
 
-      <div className="dashboard-metrics-grid grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="relay-metrics-grid grid gap-3 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard
+          className="relay-metric-card"
           title={t('dashboard.totalRequests')}
           value={stats.totalRequests.toLocaleString()}
           icon={Activity}
@@ -162,24 +196,27 @@ export function Dashboard() {
           }}
         />
         <StatsCard
+          className="relay-metric-card"
           title={t('dashboard.successRate')}
           value={`${stats.successRate}%`}
-          icon={CheckCircle}
+          icon={CheckCircle2}
           trend={{
             value: stats.successRateTrend,
             label: t('dashboard.vsYesterday'),
           }}
         />
         <StatsCard
+          className="relay-metric-card"
           title={t('dashboard.avgResponseTime')}
           value={`${stats.avgLatency}ms`}
-          icon={Clock}
+          icon={Clock3}
           trend={{
             value: stats.latencyTrend,
             label: t('dashboard.vsYesterday'),
           }}
         />
         <StatsCard
+          className="relay-metric-card"
           title={t('dashboard.activeAccountCount')}
           value={stats.activeAccounts}
           icon={Users}
@@ -190,9 +227,9 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="dashboard-primary-grid grid gap-4 lg:grid-cols-3">
+      <div className="relay-primary-grid grid gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
-          <RequestChart data={chartData} />
+          <RequestChart data={chartData} className="relay-chart-card" />
         </div>
         <div>
           <QuickActions
@@ -202,15 +239,17 @@ export function Dashboard() {
             onToolCalling={handleToolCalling}
             onViewLogs={handleViewLogs}
             isLoading={isLoading}
+            className="relay-actions-card"
           />
         </div>
       </div>
 
-      <div className="dashboard-secondary-grid grid gap-4 lg:grid-cols-2 items-stretch">
-        <ProviderStatusCard providers={providers} />
+      <div className="relay-secondary-grid grid gap-4 lg:grid-cols-2 items-stretch">
+        <ProviderStatusCard providers={providers} className="relay-provider-card" />
         <RecentActivity
           activities={activities}
           onItemClick={handleActivityClick}
+          className="relay-activity-card"
         />
       </div>
     </div>

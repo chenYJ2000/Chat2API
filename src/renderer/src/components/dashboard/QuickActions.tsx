@@ -27,22 +27,23 @@ export function QuickActions({
   const { t } = useTranslation()
 
   return (
-    <Card className={cn('', className)}>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-[var(--accent-primary)]/10 flex items-center justify-center">
-            <Zap className="h-4 w-4 text-[var(--accent-primary)]" />
-          </div>
-          {t('quickActions.title')}
-        </CardTitle>
+    <Card className={cn('relay-actions', className)}>
+      <CardHeader className="relay-panel-header">
+        <div>
+          <span className="relay-panel-kicker">CONTROL DECK</span>
+          <CardTitle className="relay-panel-title">{t('quickActions.title')}</CardTitle>
+        </div>
+        <div className="relay-panel-icon">
+          <Zap className="h-4 w-4" />
+        </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="relay-actions-list">
         <Button
           className={cn(
-            "w-full justify-start",
+            "relay-action-primary w-full justify-start",
             proxyRunning 
-              ? "bg-orange-100 text-orange-700 hover:bg-orange-200 dark:bg-orange-950/50 dark:text-white dark:hover:bg-orange-900/50"
-              : "dark:text-white"
+              ? "is-running"
+              : ""
           )}
           variant={proxyRunning ? 'secondary' : 'default'}
           onClick={onToggleProxy}
@@ -68,7 +69,7 @@ export function QuickActions({
         </Button>
 
         <Button
-          className="w-full justify-start"
+          className="relay-action-secondary w-full justify-start"
           variant="outline"
           onClick={onAddAccount}
         >
@@ -77,7 +78,7 @@ export function QuickActions({
         </Button>
 
         <Button
-          className="w-full justify-start"
+          className="relay-action-secondary w-full justify-start"
           variant="outline"
           onClick={onToolCalling}
         >
@@ -86,7 +87,7 @@ export function QuickActions({
         </Button>
 
         <Button
-          className="w-full justify-start"
+          className="relay-action-secondary w-full justify-start"
           variant="outline"
           onClick={onViewLogs}
         >
