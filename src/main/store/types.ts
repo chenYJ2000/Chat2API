@@ -293,13 +293,24 @@ export interface ChatMessage {
   /** Message role */
   role: 'user' | 'assistant' | 'system' | 'tool'
   /** Message content */
-  content: string | any[]
+  content: string | any[] | null
+  /** Optional participant name from the OpenAI message format */
+  name?: string
   /** Timestamp */
   timestamp: number
   /** Provider-specific message ID */
   providerMessageId?: string
   /** Tool call ID (for tool messages) */
   toolCallId?: string
+  /** Native OpenAI function calls emitted by an assistant message */
+  toolCalls?: Array<{
+    id: string
+    type: 'function'
+    function: {
+      name: string
+      arguments: string
+    }
+  }>
 }
 
 /**
@@ -329,6 +340,11 @@ export interface SessionRecord {
   metadata?: {
     title?: string
     tokenCount?: number
+    /** Latest generated summary, duplicated for management UI visibility. */
+    contextSummary?: string
+    summarizedAt?: number
+    /** Last provider-side conversation identifier, when one is available. */
+    providerSessionId?: string
   }
 }
 
@@ -721,7 +737,7 @@ export const DEFAULT_CONTEXT_MANAGEMENT_CONFIG: ContextManagementConfig = {
     tokenLimit: { enabled: false, maxTokens: 4000 },
     summary: { enabled: false, keepRecentMessages: 20 },
   },
-  executionOrder: ['slidingWindow', 'tokenLimit', 'summary'],
+  executionOrder: ['summary', 'slidingWindow', 'tokenLimit'],
 }
 
 export const DEFAULT_REQUEST_LOG_CONFIG: RequestLogConfig = {

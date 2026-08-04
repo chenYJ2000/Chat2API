@@ -67,7 +67,7 @@ FluxMeld 的数据目录是 ~/.fluxmeld/，不会读取或覆盖旧应用安装�
 | --- | --- |
 | DeepSeek | deepseek-v4-flash, deepseek-v4-pro |
 | GLM | GLM-5.2 |
-| Kimi | Kimi-K3 |
+| Kimi | Kimi-K3, Kimi-K2.6 |
 | MiniMax | MiniMax-M2.7 |
 | Mimo | MiMo-V2.5-Pro, MiMo-V2.5, MiMo-V2-Flash |
 | Perplexity | Auto |
@@ -121,6 +121,18 @@ curl http://127.0.0.1:8080/v1/models
 ~~~
 
 如果你开启了 API Key 保护，请按 FluxMeld 的配置补充 Authorization 请求头。
+
+### 可选的持久化上下文
+
+Chat Completions 默认仍是无状态的。如需让 FluxMeld 在本地保存一段对话，可在请求体传入自行指定的 `session_id`，或设置 `X-FluxMeld-Session-Id` 请求头。FluxMeld 会在响应头回传该标识；下一轮会恢复已保存的上下文，并保存最新的助手回复（包括原生工具调用）。摘要压缩发生后，为获得最稳定的结果，建议继续使用同一个 session ID 且只传入新增加的消息。
+
+~~~json
+{
+  "model": "your-model",
+  "session_id": "project-chat-2026-08-04",
+  "messages": [{ "role": "user", "content": "请继续上一轮的回答。" }]
+}
+~~~
 
 ## 仓库导览
 

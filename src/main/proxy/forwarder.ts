@@ -45,9 +45,11 @@ import { isReasoningEnabled } from './utils/reasoning'
 import { sessionManager } from './sessionManager'
 import {
   createContextManagementService,
+  formatMessageForSummary,
   SummaryGenerator,
-  type ChatMessage as ContextChatMessage,
 } from './services/contextManagementService'
+import { cloneChatMessage } from './services/sessionContextService'
+import type { ChatMessage as ContextChatMessage } from './types'
 import {
   getAbortReason,
   getRemainingTimeout,
@@ -531,14 +533,7 @@ export class RequestForwarder {
         const conversationText = messages
           .map(msg => {
             const role = msg.role.toUpperCase()
-            const content = typeof msg.content === 'string'
-              ? msg.content
-              : Array.isArray(msg.content)
-                ? msg.content
-                    .filter(part => part.type === 'text' && part.text)
-                    .map(part => part.text)
-                    .join('\n')
-                : ''
+            const content = formatMessageForSummary(msg)
             return `${role}: ${content}`
           })
           .join('\n\n')
@@ -623,11 +618,7 @@ export class RequestForwarder {
           )
 
           const originalCount = modifiedRequest.messages.length
-          const contextMessages: ContextChatMessage[] = modifiedRequest.messages.map(msg => ({
-            role: msg.role as 'user' | 'assistant' | 'system' | 'tool',
-            content: msg.content,
-            timestamp: Date.now(),
-          }))
+          const contextMessages: ContextChatMessage[] = modifiedRequest.messages.map(cloneChatMessage)
 
           const processResult = await contextService.process(contextMessages)
           throwIfAborted(context.signal)
@@ -647,10 +638,10 @@ export class RequestForwarder {
 
             modifiedRequest = {
               ...modifiedRequest,
-              messages: processResult.messages.map(msg => ({
-                role: msg.role,
-                content: msg.content,
-              })),
+              // Keep OpenAI metadata such as tool_calls, tool_call_id, and
+              // name.  Dropping those fields makes a retained tool exchange
+              // invalid on the next provider request.
+              messages: processResult.messages.map(cloneChatMessage),
             }
           }
         } catch (error) {
@@ -784,6 +775,7 @@ export class RequestForwarder {
         if (result.success) {
           return {
             ...result,
+            contextMessages: modifiedRequest.messages.map(cloneChatMessage),
             ...(toolRepairTelemetry ? { toolRepair: toolRepairTelemetry } : {}),
             selection: currentSelection,
           }

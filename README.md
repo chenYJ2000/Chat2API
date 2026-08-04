@@ -78,7 +78,7 @@ access can change independently of FluxMeld releases.
 | --- | --- |
 | DeepSeek | deepseek-v4-flash, deepseek-v4-pro |
 | GLM | GLM-5.2 |
-| Kimi | Kimi-K3 |
+| Kimi | Kimi-K3, Kimi-K2.6 |
 | MiniMax | MiniMax-M2.7 |
 | Mimo | MiMo-V2.5-Pro, MiMo-V2.5, MiMo-V2-Flash |
 | Perplexity | Auto |
@@ -134,6 +134,24 @@ curl http://127.0.0.1:8080/v1/models
 
 If API-key protection is enabled, supply the Authorization header required by
 your FluxMeld configuration.
+
+### Optional persistent context
+
+Chat completions remain stateless by default. To let FluxMeld persist a local
+conversation, send a client-chosen `session_id` in the request body or an
+`X-FluxMeld-Session-Id` request header. FluxMeld echoes the identifier in the
+response header, restores its saved context on the next turn, and stores the
+latest assistant response (including native tool calls) locally. For the most
+predictable behavior after summary compression, send only newly added messages
+with the same session ID.
+
+~~~json
+{
+  "model": "your-model",
+  "session_id": "project-chat-2026-08-04",
+  "messages": [{ "role": "user", "content": "Continue from the last answer." }]
+}
+~~~
 
 ## Repository guide
 

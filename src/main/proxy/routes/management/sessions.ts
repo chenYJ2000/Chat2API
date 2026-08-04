@@ -7,10 +7,8 @@ import Router from '@koa/router'
 import type { Context } from 'koa'
 import { managementAuthMiddleware } from '../../middleware/managementAuth'
 import sessionManager from '../../sessionManager'
-import type { 
-  SessionRecord,
-  ManagementApiResponse 
-} from '../../../../shared/types'
+import type { ManagementApiResponse } from '../../../../shared/types'
+import type { SessionRecord } from '../../../store/types'
 
 const router = new Router({ prefix: '/v0/management' })
 

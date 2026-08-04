@@ -546,14 +546,30 @@ interface SessionRecord {
   id: string
   providerId: string
   accountId: string
-  providerSessionId: string
-  parentMessageId?: string
   sessionType: 'chat' | 'agent'
-  messages: any[]
+  messages: Array<{
+    role: 'user' | 'assistant' | 'system' | 'tool'
+    content: string | any[] | null
+    name?: string
+    toolCallId?: string
+    toolCalls?: Array<{
+      id: string
+      type: 'function'
+      function: { name: string; arguments: string }
+    }>
+    timestamp: number
+  }>
   createdAt: number
   lastActiveAt: number
   status: 'active' | 'expired' | 'deleted'
   model?: string
+  metadata?: {
+    title?: string
+    tokenCount?: number
+    contextSummary?: string
+    summarizedAt?: number
+    providerSessionId?: string
+  }
 }
 
 const sessionAPI = {

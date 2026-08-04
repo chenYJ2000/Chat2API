@@ -25,7 +25,14 @@ import { QwenAdapter } from '../proxy/adapters/qwen'
 import { QwenAiAdapter } from '../proxy/adapters/qwen-ai'
 import { ZaiAdapter } from '../proxy/adapters/zai'
 import type { Provider, Account, ProxyStatus, ProviderCheckResult, OAuthResult, AuthType, CredentialField, LogLevel, LogEntry, ProviderVendor, AppConfig } from '../../shared/types'
-import type { SystemPrompt, SessionConfig, SessionRecord, ManagementApiConfig } from '../store/types'
+import type {
+  SystemPrompt,
+  SessionConfig,
+  SessionRecord,
+  ManagementApiConfig,
+  ContextManagementConfig,
+} from '../store/types'
+import { DEFAULT_CONTEXT_MANAGEMENT_CONFIG } from '../store/types'
 import type { ProviderType } from '../oauth/types'
 
 let proxyServer: ProxyServer | null = null
@@ -970,42 +977,41 @@ export async function registerIpcHandlers(mainWindow: BrowserWindow | null): Pro
 
   ipcMain.handle(IpcChannels.CONTEXT_MANAGEMENT_GET_CONFIG, async () => {
     const config = ConfigManager.get()
-    return config.contextManagement || {
-      enabled: true,
-      strategies: {
-        slidingWindow: { enabled: true, maxMessages: 20 },
-        tokenLimit: { enabled: false, maxTokens: 4000 },
-        summary: { enabled: false, keepRecentMessages: 20 },
-      },
-      executionOrder: ['slidingWindow', 'tokenLimit', 'summary'],
-    }
+    return config.contextManagement || DEFAULT_CONTEXT_MANAGEMENT_CONFIG
   })
 
-  ipcMain.handle(IpcChannels.CONTEXT_MANAGEMENT_UPDATE_CONFIG, async (_, updates: Partial<any>) => {
-    const config = ConfigManager.get()
-    const defaultContextConfig = {
-      enabled: true,
-      strategies: {
-        slidingWindow: { enabled: true, maxMessages: 20 },
-        tokenLimit: { enabled: false, maxTokens: 4000 },
-        summary: { enabled: false, keepRecentMessages: 20 },
-      },
-      executionOrder: ['slidingWindow', 'tokenLimit', 'summary'],
-    }
-    const currentContextConfig = config.contextManagement || defaultContextConfig
-    const newContextConfig = {
-      ...currentContextConfig,
-      ...updates,
-      strategies: {
-        ...currentContextConfig.strategies,
-        ...(updates.strategies || {}),
-      },
-    }
-    
-    ConfigManager.update({ contextManagement: newContextConfig })
-    
-    return newContextConfig
-  })
+  ipcMain.handle(
+    IpcChannels.CONTEXT_MANAGEMENT_UPDATE_CONFIG,
+    async (_, updates: Partial<ContextManagementConfig>) => {
+      const config = ConfigManager.get()
+      const currentContextConfig = config.contextManagement || DEFAULT_CONTEXT_MANAGEMENT_CONFIG
+      const newContextConfig = {
+        ...currentContextConfig,
+        ...updates,
+        strategies: {
+          ...currentContextConfig.strategies,
+          ...(updates.strategies ? {
+            slidingWindow: {
+              ...currentContextConfig.strategies.slidingWindow,
+              ...updates.strategies.slidingWindow,
+            },
+            tokenLimit: {
+              ...currentContextConfig.strategies.tokenLimit,
+              ...updates.strategies.tokenLimit,
+            },
+            summary: {
+              ...currentContextConfig.strategies.summary,
+              ...updates.strategies.summary,
+            },
+          } : {}),
+        },
+      }
+
+      ConfigManager.update({ contextManagement: newContextConfig })
+
+      return newContextConfig
+    },
+  )
   
   oauthManager.on('progress', (event) => {
     mainWindow?.webContents.send(IpcChannels.OAUTH_PROGRESS, event)

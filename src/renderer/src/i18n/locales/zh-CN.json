@@ -256,7 +256,7 @@
   },
   "kimi": {
     "name": "Kimi",
-    "description": "Kimi K3 AI 助手，支持标准/进阶思考强度和联网搜索",
+    "description": "Kimi K3 与 K2.6 AI 助手，支持思考强度和联网搜索",
     "accessToken": "访问令牌",
     "accessTokenPlaceholder": "请输入 Kimi 访问令牌或刷新令牌",
     "accessTokenHelp": "浏览器 Cookie 中的 kimi-auth 字段值（推荐），也可使用 JWT Token 或 refresh_token"
@@ -1051,6 +1051,7 @@
     "title": "上下文管理",
     "enableContextManagement": "启用上下文管理",
     "enableContextManagementHint": "自动管理对话上下文，防止超出模型限制",
+    "executionOrderHint": "策略按此顺序执行：先摘要较早历史，再保留最近消息，最后按 Token 上限裁剪。",
     "strategyConfig": "策略配置",
     "configSaved": "上下文管理配置已保存",
     "configSaveFailed": "保存上下文管理配置失败",

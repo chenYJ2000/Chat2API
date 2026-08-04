@@ -256,7 +256,7 @@
   },
   "kimi": {
     "name": "Kimi",
-    "description": "Kimi K3 AI assistant with Standard/Advanced reasoning and web search",
+    "description": "Kimi K3 and K2.6 AI assistants with reasoning and web search",
     "accessToken": "Access Token",
     "accessTokenPlaceholder": "Enter Kimi Access Token or Refresh Token",
     "accessTokenHelp": "The kimi-auth value from browser cookies (recommended), or JWT Token / refresh_token"
@@ -1051,6 +1051,7 @@
     "title": "Context Management",
     "enableContextManagement": "Enable Context Management",
     "enableContextManagementHint": "Automatically manage conversation context to prevent exceeding model limits",
+    "executionOrderHint": "Strategies run in this order: summarize earlier history, keep recent messages, then enforce the token limit.",
     "strategyConfig": "Strategy Configuration",
     "configSaved": "Context management configuration saved",
     "configSaveFailed": "Failed to save context management configuration",

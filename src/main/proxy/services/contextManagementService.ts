@@ -55,6 +55,8 @@ export interface StrategyResult {
   processedCount: number
   strategyName: string
   trimmed: boolean
+  /** True only when a model-generated summary was successfully inserted. */
+  summaryGenerated?: boolean
 }
 
 /**
@@ -94,7 +96,37 @@ export const DEFAULT_CONTEXT_MANAGEMENT_CONFIG: ContextManagementConfig = {
     tokenLimit: DEFAULT_TOKEN_LIMIT_CONFIG,
     summary: DEFAULT_SUMMARY_CONFIG,
   },
-  executionOrder: ['slidingWindow', 'tokenLimit', 'summary'],
+  // Summarize before discarding history.  Otherwise the sliding window can
+  // remove the very messages the summary strategy needs to preserve.
+  executionOrder: ['summary', 'slidingWindow', 'tokenLimit'],
+}
+
+const STRATEGY_NAMES = ['summary', 'slidingWindow', 'tokenLimit'] as const
+const LEGACY_EXECUTION_ORDER = ['slidingWindow', 'tokenLimit', 'summary'] as const
+
+function sameOrder(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+function normalizeExecutionOrder(order?: readonly string[]): ContextManagementConfig['executionOrder'] {
+  // Migrate the old product default while keeping any deliberate custom order.
+  if (!order || sameOrder(order, LEGACY_EXECUTION_ORDER)) {
+    return [...DEFAULT_CONTEXT_MANAGEMENT_CONFIG.executionOrder]
+  }
+
+  const valid = order.filter(
+    (strategy): strategy is ContextManagementConfig['executionOrder'][number] =>
+      (STRATEGY_NAMES as readonly string[]).includes(strategy)
+  )
+  const unique = valid.filter((strategy, index) => valid.indexOf(strategy) === index)
+
+  return [
+    ...unique,
+    ...STRATEGY_NAMES.filter((strategy) => !unique.includes(strategy)),
+  ]
 }
 
 /**
@@ -123,19 +155,74 @@ function estimateTokens(content: string | ChatMessage['content']): number {
 }
 
 /**
- * Get message content as string
+ * Get text and function-calling metadata in a form that can be summarized.
  */
-function getMessageContent(message: ChatMessage): string {
-  if (typeof message.content === 'string') {
-    return message.content
+export function formatMessageForSummary(message: ChatMessage): string {
+  const text = typeof message.content === 'string'
+    ? message.content
+    : Array.isArray(message.content)
+      ? message.content
+          .filter(part => part.type === 'text' && part.text)
+          .map(part => part.text)
+          .join('\n')
+      : ''
+  const toolCalls = message.tool_calls?.map((toolCall) => (
+    `tool_call ${toolCall.function.name}(${toolCall.function.arguments}) [${toolCall.id}]`
+  )) ?? []
+  const toolResult = message.role === 'tool' && message.tool_call_id
+    ? [`tool_result_for ${message.tool_call_id}`]
+    : []
+
+  return [text, ...toolCalls, ...toolResult].filter(Boolean).join('\n')
+}
+
+function isConversationSummary(message: ChatMessage): boolean {
+  return message.role === 'system'
+    && typeof message.content === 'string'
+    && message.content.startsWith('[Conversation Summary]\n')
+}
+
+function estimateMessageTokens(message: ChatMessage): number {
+  const metadata = [
+    message.name,
+    message.tool_call_id,
+    ...(message.tool_calls?.map((toolCall) => (
+      `${toolCall.id} ${toolCall.function.name} ${toolCall.function.arguments}`
+    )) ?? []),
+  ].filter(Boolean).join('\n')
+
+  return estimateTokens(message.content) + Math.ceil(metadata.length / 3)
+}
+
+/**
+ * Keeps a function-call exchange intact when a retention boundary happens in
+ * the middle of its tool-result messages.  It may retain a few extra messages
+ * rather than emit an invalid orphan `tool` message.
+ */
+function keepRecentNonSystemMessages(
+  messages: ChatMessage[],
+  requestedStart: number,
+): ChatMessage[] {
+  if (requestedStart >= messages.length) return []
+
+  let start = Math.max(0, requestedStart)
+  if (messages[start]?.role === 'tool') {
+    let toolGroupStart = start
+    while (toolGroupStart > 0 && messages[toolGroupStart - 1]?.role === 'tool') {
+      toolGroupStart--
+    }
+
+    const precedingMessage = messages[toolGroupStart - 1]
+    if (precedingMessage?.role === 'assistant' && precedingMessage.tool_calls?.length) {
+      start = toolGroupStart - 1
+    } else {
+      // There is no matching assistant call in the retained history, so omit
+      // these tool results instead of forwarding an invalid message sequence.
+      while (start < messages.length && messages[start]?.role === 'tool') start++
+    }
   }
-  if (Array.isArray(message.content)) {
-    return message.content
-      .filter(part => part.type === 'text' && part.text)
-      .map(part => part.text)
-      .join('\n')
-  }
-  return ''
+
+  return messages.slice(start)
 }
 
 /**
@@ -165,8 +252,9 @@ export class SlidingWindowStrategy {
     const systemMessages = messages.filter(msg => msg.role === 'system')
     const nonSystemMessages = messages.filter(msg => msg.role !== 'system')
 
-    const maxNonSystemMessages = this.config.maxMessages - systemMessages.length
-    const keptNonSystemMessages = nonSystemMessages.slice(-maxNonSystemMessages)
+    const maxNonSystemMessages = Math.max(0, this.config.maxMessages - systemMessages.length)
+    const requestedStart = Math.max(0, nonSystemMessages.length - maxNonSystemMessages)
+    const keptNonSystemMessages = keepRecentNonSystemMessages(nonSystemMessages, requestedStart)
 
     const result = [...systemMessages, ...keptNonSystemMessages]
 
@@ -212,10 +300,7 @@ export class TokenLimitStrategy {
     const systemMessages = messages.filter(msg => msg.role === 'system')
     const nonSystemMessages = messages.filter(msg => msg.role !== 'system')
 
-    const systemTokens = systemMessages.reduce(
-      (total, msg) => total + estimateTokens(msg.content),
-      0
-    )
+    const systemTokens = systemMessages.reduce((total, msg) => total + estimateMessageTokens(msg), 0)
 
     const availableTokens = this.config.maxTokens - systemTokens
 
@@ -233,23 +318,27 @@ export class TokenLimitStrategy {
       }
     }
 
-    const keptNonSystemMessages: ChatMessage[] = []
+    let firstKeptIndex = nonSystemMessages.length
     let currentTokens = 0
 
     for (let i = nonSystemMessages.length - 1; i >= 0; i--) {
       const msg = nonSystemMessages[i]
-      const msgTokens = estimateTokens(msg.content)
+      const msgTokens = estimateMessageTokens(msg)
 
       if (currentTokens + msgTokens <= availableTokens) {
-        keptNonSystemMessages.unshift(msg)
+        firstKeptIndex = i
         currentTokens += msgTokens
       } else {
         break
       }
     }
 
+    const keptNonSystemMessages = keepRecentNonSystemMessages(nonSystemMessages, firstKeptIndex)
     const result = [...systemMessages, ...keptNonSystemMessages]
-    const totalTokens = systemTokens + currentTokens
+    const totalTokens = systemTokens + keptNonSystemMessages.reduce(
+      (total, msg) => total + estimateMessageTokens(msg),
+      0,
+    )
 
     console.log(
       `[TokenLimitStrategy] Trimmed from ${originalCount} to ${result.length} messages ` +
@@ -303,7 +392,12 @@ export class SummaryStrategy {
       }
     }
 
-    if (originalCount <= this.config.keepRecentMessages) {
+    const systemMessages = messages.filter(msg => msg.role === 'system')
+    const existingSummaries = systemMessages.filter(isConversationSummary)
+    const persistentSystemMessages = systemMessages.filter((message) => !isConversationSummary(message))
+    const nonSystemMessages = messages.filter(msg => msg.role !== 'system')
+
+    if (nonSystemMessages.length <= this.config.keepRecentMessages) {
       return {
         messages,
         originalCount,
@@ -315,21 +409,31 @@ export class SummaryStrategy {
 
     if (!this.summaryGenerator) {
       console.warn('[SummaryStrategy] No summary generator provided, falling back to sliding window')
-      const fallbackMessages = messages.slice(-this.config.keepRecentMessages)
+      const fallbackMessages = [
+        ...systemMessages,
+        ...keepRecentNonSystemMessages(
+          nonSystemMessages,
+          Math.max(0, nonSystemMessages.length - this.config.keepRecentMessages),
+        ),
+      ]
       return {
         messages: fallbackMessages,
         originalCount,
         processedCount: fallbackMessages.length,
         strategyName: 'summary',
-        trimmed: true,
+        trimmed: fallbackMessages.length < originalCount,
       }
     }
 
-    const systemMessages = messages.filter(msg => msg.role === 'system')
-    const nonSystemMessages = messages.filter(msg => msg.role !== 'system')
-
-    const recentMessages = nonSystemMessages.slice(-this.config.keepRecentMessages)
-    const oldMessages = nonSystemMessages.slice(0, -this.config.keepRecentMessages)
+    const requestedRecentStart = Math.max(
+      0,
+      nonSystemMessages.length - this.config.keepRecentMessages,
+    )
+    const recentMessages = keepRecentNonSystemMessages(nonSystemMessages, requestedRecentStart)
+    const oldMessages = [
+      ...existingSummaries,
+      ...nonSystemMessages.slice(0, nonSystemMessages.length - recentMessages.length),
+    ]
 
     if (oldMessages.length === 0) {
       return {
@@ -356,7 +460,9 @@ export class SummaryStrategy {
         content: `[Conversation Summary]\n${summary}`,
       }
 
-      const result = [...systemMessages, summaryMessage, ...recentMessages]
+      // Replace any prior generated summary instead of retaining an ever-
+      // growing stack of system summaries across a persistent session.
+      const result = [...persistentSystemMessages, summaryMessage, ...recentMessages]
 
       console.log(
         `[SummaryStrategy] Compressed from ${originalCount} to ${result.length} messages ` +
@@ -369,6 +475,7 @@ export class SummaryStrategy {
         processedCount: result.length,
         strategyName: 'summary',
         trimmed: true,
+        summaryGenerated: true,
       }
     } catch (error) {
       console.error('[SummaryStrategy] Failed to generate summary:', error)
@@ -398,7 +505,11 @@ export class ContextManagementService {
     config: ContextManagementConfig = DEFAULT_CONTEXT_MANAGEMENT_CONFIG,
     summaryGenerator?: SummaryGenerator
   ) {
-    this.config = { ...DEFAULT_CONTEXT_MANAGEMENT_CONFIG, ...config }
+    this.config = {
+      ...DEFAULT_CONTEXT_MANAGEMENT_CONFIG,
+      ...config,
+      executionOrder: normalizeExecutionOrder(config.executionOrder),
+    }
     this.slidingWindowStrategy = new SlidingWindowStrategy(
       this.config.strategies.slidingWindow
     )
@@ -418,6 +529,7 @@ export class ContextManagementService {
     this.config = {
       ...this.config,
       ...config,
+      executionOrder: normalizeExecutionOrder(config.executionOrder ?? this.config.executionOrder),
       strategies: {
         ...this.config.strategies,
         ...(config.strategies || {}),
@@ -475,7 +587,7 @@ export class ContextManagementService {
 
         case 'summary':
           result = await this.summaryStrategy.execute(currentMessages)
-          if (result.trimmed) {
+          if (result.summaryGenerated) {
             summaryGenerated = true
           }
           break
@@ -520,7 +632,7 @@ export class ContextManagementService {
    * Estimate total tokens for messages
    */
   static estimateTotalTokens(messages: ChatMessage[]): number {
-    return messages.reduce((total, msg) => total + estimateTokens(msg.content), 0)
+    return messages.reduce((total, msg) => total + estimateMessageTokens(msg), 0)
   }
 }
 

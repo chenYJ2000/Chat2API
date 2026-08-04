@@ -6,7 +6,13 @@
 import Router from '@koa/router'
 import type { Context } from 'koa'
 import { PassThrough } from 'stream'
-import { ChatCompletionRequest, ChatCompletionResponse, ForwardResult, ProxyContext } from '../types'
+import {
+  ChatCompletionRequest,
+  ChatCompletionResponse,
+  ChatMessage,
+  ForwardResult,
+  ProxyContext,
+} from '../types'
 import { loadBalancer } from '../loadbalancer'
 import { requestForwarder } from '../forwarder'
 import { streamHandler } from '../stream'
@@ -27,8 +33,15 @@ import {
   waitForAbort,
 } from '../requestLifecycle'
 import { getEffectiveRequestTimeout } from '../requestTimeoutPolicy'
+import sessionManager from '../sessionManager'
+import {
+  assistantMessageFromResponse,
+  assistantMessageFromSSE,
+} from '../services/sessionContextService'
 
 const router = new Router({ prefix: '/v1/chat' })
+const SESSION_ID_HEADER = 'x-fluxmeld-session-id'
+const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
 /**
  * Generate Request ID
@@ -45,6 +58,51 @@ function getClientIP(ctx: Context): string {
     ctx.headers['x-forwarded-for'] as string ||
     ctx.ip ||
     'unknown'
+}
+
+function normalizeSessionId(value: unknown, source: string): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') {
+    throw new Error(`${source} must be a string`)
+  }
+
+  const sessionId = value.trim()
+  if (!SESSION_ID_PATTERN.test(sessionId)) {
+    throw new Error(
+      `${source} must be 1-128 characters and contain only letters, numbers, '.', '_', ':', or '-'`,
+    )
+  }
+
+  return sessionId
+}
+
+/**
+ * Resolve the opt-in local-session identifier without forwarding this custom
+ * FluxMeld field to an upstream OpenAI-compatible provider.
+ */
+function getRequestedSessionId(ctx: Context, request: ChatCompletionRequest): string | undefined {
+  const requestWithExtensions = request as ChatCompletionRequest & {
+    session_id?: unknown
+    sessionId?: unknown
+  }
+  const bodySessionId = normalizeSessionId(
+    requestWithExtensions.session_id ?? requestWithExtensions.sessionId,
+    'session_id',
+  )
+  const rawHeader = ctx.headers[SESSION_ID_HEADER]
+  const headerValue = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader
+  const headerSessionId = normalizeSessionId(headerValue, 'X-FluxMeld-Session-Id')
+
+  if (bodySessionId && headerSessionId && bodySessionId !== headerSessionId) {
+    throw new Error('session_id and X-FluxMeld-Session-Id must match when both are provided')
+  }
+
+  return bodySessionId ?? headerSessionId
+}
+
+function withoutLocalSessionFields(request: ChatCompletionRequest): ChatCompletionRequest {
+  const { session_id: _sessionId, sessionId: _camelCaseSessionId, ...forwardRequest } = request
+  return forwardRequest
 }
 
 /**
@@ -146,6 +204,22 @@ router.post('/completions', async (ctx: Context) => {
     return
   }
 
+  let requestedSessionId: string | undefined
+  try {
+    requestedSessionId = getRequestedSessionId(ctx, request)
+  } catch (error) {
+    ctx.status = 400
+    ctx.body = {
+      error: {
+        message: error instanceof Error ? error.message : 'Invalid session_id',
+        type: 'invalid_request_error',
+        param: 'session_id',
+        code: 'invalid_session_id',
+      },
+    }
+    return
+  }
+
   // Read feature parameters from Headers (lower priority than request body)
   const webSearchFromHeader = ctx.headers['x-web-search'] === 'true'
   const reasoningEffortFromHeader = ctx.headers['x-reasoning-effort'] as 'low' | 'medium' | 'high' | undefined
@@ -214,8 +288,40 @@ router.post('/completions', async (ctx: Context) => {
 
   const { account, provider, actualModel } = selection
 
+  let forwardRequest = withoutLocalSessionFields(request)
+  if (requestedSessionId) {
+    try {
+      const preparedSession = sessionManager.prepareSessionMessages(
+        {
+          sessionId: requestedSessionId,
+          providerId: provider.id,
+          accountId: account.id,
+          model: request.model,
+        },
+        request.messages,
+      )
+      forwardRequest = {
+        ...forwardRequest,
+        messages: preparedSession.messages,
+      }
+      ctx.set('X-FluxMeld-Session-Id', preparedSession.sessionId)
+    } catch (error) {
+      ctx.status = 500
+      ctx.body = {
+        error: {
+          message: error instanceof Error ? error.message : 'Failed to initialize session',
+          type: 'api_error',
+          param: null,
+          code: 'session_initialization_failed',
+        },
+      }
+      return
+    }
+  }
+
   const context: ProxyContext = {
     requestId,
+    ...(requestedSessionId ? { sessionId: requestedSessionId } : {}),
     providerId: provider.id,
     accountId: account.id,
     model: request.model,
@@ -255,7 +361,7 @@ router.post('/completions', async (ctx: Context) => {
   try {
     const result = await waitForAbort(
       requestForwarder.forwardChatCompletion(
-        request,
+        forwardRequest,
         account,
         provider,
         actualModel,
@@ -342,6 +448,30 @@ router.post('/completions', async (ctx: Context) => {
     }
 
     const userInput = extractUserInput(request.messages)
+    const persistSuccessfulSession = (assistantMessage?: ChatMessage) => {
+      if (!requestContext.sessionId || !result.contextMessages) return
+
+      try {
+        const persistedSession = sessionManager.persistSessionContext({
+          sessionId: requestContext.sessionId,
+          providerId: usedProvider.id,
+          accountId: usedAccount.id,
+          model: request.model,
+          messages: result.contextMessages,
+          ...(assistantMessage ? { assistantMessage } : {}),
+          ...(result.providerSessionId ? { providerSessionId: result.providerSessionId } : {}),
+        })
+
+        if (!persistedSession) {
+          console.warn('[Chat] Session disappeared before its context could be persisted:', requestContext.sessionId)
+        }
+      } catch (error) {
+        // A local persistence failure should never turn a successful provider
+        // response into a failed API request.
+        console.error('[Chat] Failed to persist session context:', error)
+      }
+    }
+
     const recordSuccessfulAccountUse = () => {
       const latestAccount = storeManager.getAccountById(usedAccount.id) ?? usedAccount
       storeManager.updateAccount(usedAccount.id, {
@@ -387,6 +517,8 @@ router.post('/completions', async (ctx: Context) => {
         if (streamSettled) return
         streamSettled = true
         const finalLatency = Date.now() - startTime
+
+        persistSuccessfulSession(assistantMessageFromSSE(collectedContent))
 
         loadBalancer.clearAccountFailure(usedAccount.id)
         proxyStatusManager.recordRequestSuccess(finalLatency)
@@ -550,6 +682,7 @@ router.post('/completions', async (ctx: Context) => {
       }
 
       loadBalancer.clearAccountFailure(usedAccount.id)
+      persistSuccessfulSession(assistantMessageFromResponse(result.body))
       proxyStatusManager.recordRequestSuccess(latency)
       recordSuccessfulAccountUse()
       storeManager.recordRequestInStats(

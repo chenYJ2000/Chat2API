@@ -184,9 +184,9 @@ test('GLM, Kimi, and MiniMax built-in default models match current web providers
   assert.equal(glmConfig.modelMappings?.['GLM-5.2'], 'glm-5.2')
   assert.equal(glmConfig.modelMappings?.['GLM-5.1'], undefined)
 
-  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K3'])
+  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K3', 'Kimi-K2.6'])
   assert.equal(kimiConfig.modelMappings?.['Kimi-K3'], 'k3')
-  assert.equal(kimiConfig.modelMappings?.['Kimi-K2.6'], undefined)
+  assert.equal(kimiConfig.modelMappings?.['Kimi-K2.6'], 'kimi-k2.6')
 
   assert.deepEqual(minimaxConfig.supportedModels, ['MiniMax-M2.7'])
   assert.deepEqual(minimaxConfig.modelMappings, {
@@ -229,9 +229,10 @@ test('GLM-5.2 reasoning effort maps to the current Qingyan web modes', () => {
   assert.doesNotMatch(glmAdapterSource, /if_plus_model/)
 })
 
-test('Kimi K3 model and reasoning effort reach the current web chat payload', () => {
-  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K3'])
+test('Kimi K3 and K2.6 models reach the current web chat payload', () => {
+  assert.deepEqual(kimiConfig.supportedModels, ['Kimi-K3', 'Kimi-K2.6'])
   assert.equal(kimiConfig.modelMappings?.['Kimi-K3'], 'k3')
+  assert.equal(kimiConfig.modelMappings?.['Kimi-K2.6'], 'kimi-k2.6')
   assert.equal(resolveKimiScenario('k3'), 'SCENARIO_OK_COMPUTER')
   assert.equal(resolveKimiScenario('kimi-k2.6'), 'SCENARIO_K2D5')
 
@@ -262,6 +263,18 @@ test('Kimi K3 model and reasoning effort reach the current web chat payload', ()
   assert.equal(payload.options.thinking, true)
   assert.equal(payload.options.reasoning_effort, 'REASONING_EFFORT_LOW')
   assert.equal(payload.options.context_length, 'CONTEXT_LENGTH_L')
+
+  const k26Payload = createKimiChatPayload({
+    model: 'kimi-k2.6',
+    content: 'hello',
+    enableWebSearch: false,
+  })
+
+  assert.equal(k26Payload.scenario, 'SCENARIO_K2D5')
+  assert.equal(k26Payload.message.scenario, 'SCENARIO_K2D5')
+  assert.equal(k26Payload.kimiplus_id, undefined)
+  assert.equal(k26Payload.options.reasoning_effort, 'REASONING_EFFORT_LOW')
+  assert.equal(k26Payload.options.context_length, undefined)
 
   const frame = encodeKimiGrpcFrame(payload)
   assert.equal(frame.readUInt8(0), 0)

@@ -13,12 +13,13 @@
 | 显示名称 | 实际模型 ID |
 | --- | --- |
 | Kimi-K3 | k3 |
+| Kimi-K2.6 | kimi-k2.6 |
 
 ## 适配状态
 
 已适配：Connect JSON 对话接口、流式对话、非流式对话、多轮会话、账号级批量清理对话记录、联网搜索和 K3 思考强度。
 
-K3 请求使用官网当前的 `SCENARIO_OK_COMPUTER` 场景和 `ok-computer` Agent。OpenAI 兼容参数映射如下：
+K3 请求使用官网当前的 `SCENARIO_OK_COMPUTER` 场景和 `ok-computer` Agent；K2.6 使用 `SCENARIO_K2D5` 场景。下面是 K3 的 OpenAI 兼容参数映射：
 
 | `reasoning_effort` | Kimi 思考强度 | 官网枚举 |
 | --- | --- | --- |
@@ -35,4 +36,4 @@ K3 请求使用官网当前的 `SCENARIO_OK_COMPUTER` 场景和 `ok-computer` Ag
 1. 登录 `www.kimi.com`。
 2. 打开 DevTools -> Application -> Cookies，复制 `kimi-auth` 值，或复制可用 JWT/refresh token。
 3. 在供应商管理中添加 Kimi 账号，填入 `token`。
-4. 默认模型为 `Kimi-K3`；调用方可通过 `reasoning_effort` 选择“标准”或“进阶”。
+4. 可选择 `Kimi-K3` 或 `Kimi-K2.6`；调用方可通过 `reasoning_effort` 选择思考强度。

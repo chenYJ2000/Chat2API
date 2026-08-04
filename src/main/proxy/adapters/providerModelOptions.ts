@@ -140,9 +140,8 @@ export class KimiRequestValidationError extends Error {
 }
 
 export function resolveKimiScenario(model: string): KimiScenario {
-  // K2.6 is still accepted for user-defined legacy aliases, but the current
-  // web configuration exposes it through SCENARIO_K2D5. All current/default
-  // Kimi models use the K3 OK Computer route.
+  // K2.6 uses the K2D5 route in the Kimi web protocol, while K3 uses
+  // the OK Computer route.
   return model.toLowerCase().includes('k2')
     ? 'SCENARIO_K2D5'
     : 'SCENARIO_OK_COMPUTER'
@@ -155,7 +154,7 @@ export function resolveKimiReasoningEffort(
   const isK3 = resolveKimiScenario(model) === 'SCENARIO_OK_COMPUTER'
 
   // Match the website defaults: K3 defaults to Advanced (HIGH), while the
-  // legacy K2.6 route defaults to its highest supported level (LOW).
+  // K2.6 route defaults to its highest supported level (LOW).
   if (value === undefined || value === null) {
     return isK3 ? 'REASONING_EFFORT_HIGH' : 'REASONING_EFFORT_LOW'
   }

@@ -32,6 +32,8 @@ import {
   UserModelOverrides,
   CustomModel,
   DEFAULT_REQUEST_LOG_CONFIG,
+  ContextManagementConfig,
+  DEFAULT_CONTEXT_MANAGEMENT_CONFIG,
   createDefaultModelMappings,
   normalizeModelMappingsWithDefaults,
   sanitizeDeepSeekModelOverrides,
@@ -50,6 +52,84 @@ let Store: any = null
  * Storage Instance Type Definition
  */
 type StoreType = any
+
+const CONTEXT_STRATEGIES = ['summary', 'slidingWindow', 'tokenLimit'] as const
+const LEGACY_CONTEXT_EXECUTION_ORDER = ['slidingWindow', 'tokenLimit', 'summary'] as const
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function sameStringArray(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+/**
+ * Normalizes persisted context-management settings and migrates the legacy
+ * order that discarded messages before the summary strategy could read them.
+ */
+function normalizeContextManagementConfig(value: unknown): ContextManagementConfig {
+  const source = isRecord(value) ? value : {}
+  const strategySource = isRecord(source.strategies) ? source.strategies : {}
+  const slidingWindowSource = isRecord(strategySource.slidingWindow) ? strategySource.slidingWindow : {}
+  const tokenLimitSource = isRecord(strategySource.tokenLimit) ? strategySource.tokenLimit : {}
+  const summarySource = isRecord(strategySource.summary) ? strategySource.summary : {}
+  const defaults = DEFAULT_CONTEXT_MANAGEMENT_CONFIG
+  const positiveInteger = (candidate: unknown, fallback: number): number => (
+    typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0
+      ? Math.floor(candidate)
+      : fallback
+  )
+  const enabled = (candidate: unknown, fallback: boolean): boolean => (
+    typeof candidate === 'boolean' ? candidate : fallback
+  )
+  const requestedOrder = Array.isArray(source.executionOrder)
+    ? source.executionOrder.filter((item): item is string => typeof item === 'string')
+    : undefined
+  const validOrder = requestedOrder?.filter(
+    (strategy): strategy is ContextManagementConfig['executionOrder'][number] => (
+      (CONTEXT_STRATEGIES as readonly string[]).includes(strategy)
+    ),
+  ) ?? []
+  const uniqueOrder = validOrder.filter((strategy, index) => validOrder.indexOf(strategy) === index)
+  const executionOrder: ContextManagementConfig['executionOrder'] = !requestedOrder || sameStringArray(uniqueOrder, LEGACY_CONTEXT_EXECUTION_ORDER)
+    ? [...defaults.executionOrder]
+    : [
+        ...uniqueOrder,
+        ...CONTEXT_STRATEGIES.filter((strategy) => !uniqueOrder.includes(strategy)),
+      ]
+
+  return {
+    enabled: enabled(source.enabled, defaults.enabled),
+    strategies: {
+      slidingWindow: {
+        enabled: enabled(slidingWindowSource.enabled, defaults.strategies.slidingWindow.enabled),
+        maxMessages: positiveInteger(
+          slidingWindowSource.maxMessages,
+          defaults.strategies.slidingWindow.maxMessages,
+        ),
+      },
+      tokenLimit: {
+        enabled: enabled(tokenLimitSource.enabled, defaults.strategies.tokenLimit.enabled),
+        maxTokens: positiveInteger(
+          tokenLimitSource.maxTokens,
+          defaults.strategies.tokenLimit.maxTokens,
+        ),
+      },
+      summary: {
+        enabled: enabled(summarySource.enabled, defaults.strategies.summary.enabled),
+        keepRecentMessages: positiveInteger(
+          summarySource.keepRecentMessages,
+          defaults.strategies.summary.keepRecentMessages,
+        ),
+        ...(typeof summarySource.summaryPrompt === 'string'
+          ? { summaryPrompt: summarySource.summaryPrompt }
+          : {}),
+      },
+    },
+    executionOrder,
+  }
+}
 
 /**
  * Storage Manager Class
@@ -254,6 +334,7 @@ class StoreManager {
       requestLogConfig: normalizeRequestLogConfig(
         rawConfig.requestLogConfig || DEFAULT_REQUEST_LOG_CONFIG,
       ),
+      contextManagement: normalizeContextManagementConfig(rawConfig.contextManagement),
       toolCallingConfig: normalizeToolCallingConfig(rawToolCallingConfig),
       toolPromptConfig: undefined,
     }
@@ -1341,8 +1422,7 @@ class StoreManager {
   addSession(session: SessionRecord): void {
     this.ensureInitialized()
     const sessions = this.store!.get('sessions') || []
-    sessions.push(session)
-    this.store!.set('sessions', sessions)
+    this.store!.set('sessions', [...sessions, session])
   }
 
   /**
@@ -1357,13 +1437,15 @@ class StoreManager {
       return null
     }
     
-    sessions[index] = {
+    const updatedSession = {
       ...sessions[index],
       ...updates,
     }
-    
-    this.store!.set('sessions', sessions)
-    return sessions[index]
+
+    this.store!.set('sessions', sessions.map((session: SessionRecord, sessionIndex: number) => (
+      sessionIndex === index ? updatedSession : session
+    )))
+    return updatedSession
   }
 
   /**
@@ -1380,17 +1462,19 @@ class StoreManager {
     
     const config = this.getSessionConfig()
     const session = sessions[index]
-    
-    if (session.messages.length >= config.maxMessagesPerSession) {
-      session.messages = session.messages.slice(-config.maxMessagesPerSession + 1)
+    const retainedMessages = session.messages.length >= config.maxMessagesPerSession
+      ? session.messages.slice(-config.maxMessagesPerSession + 1)
+      : session.messages
+    const updatedSession: SessionRecord = {
+      ...session,
+      messages: [...retainedMessages, message],
+      lastActiveAt: Date.now(),
     }
-    
-    session.messages.push(message)
-    session.lastActiveAt = Date.now()
-    
-    sessions[index] = session
-    this.store!.set('sessions', sessions)
-    return session
+
+    this.store!.set('sessions', sessions.map((item: SessionRecord, sessionIndex: number) => (
+      sessionIndex === index ? updatedSession : item
+    )))
+    return updatedSession
   }
 
   /**
@@ -1405,8 +1489,7 @@ class StoreManager {
       return false
     }
     
-    sessions.splice(index, 1)
-    this.store!.set('sessions', sessions)
+    this.store!.set('sessions', sessions.filter((_: SessionRecord, sessionIndex: number) => sessionIndex !== index))
     return true
   }
 

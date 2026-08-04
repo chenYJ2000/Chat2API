@@ -42,7 +42,7 @@ export function ContextManagement() {
       tokenLimit: { enabled: false, maxTokens: 4000 },
       summary: { enabled: false, keepRecentMessages: 20 },
     },
-    executionOrder: ['slidingWindow', 'tokenLimit', 'summary'],
+    executionOrder: ['summary', 'slidingWindow', 'tokenLimit'],
   })
 
   const [hasChanges, setHasChanges] = useState(false)
@@ -131,6 +131,9 @@ export function ContextManagement() {
                   {t('contextManagement.strategyConfig')}
                 </span>
               </div>
+              <p className="text-xs text-muted-foreground">
+                {t('contextManagement.executionOrderHint')}
+              </p>
 
               <div className="space-y-4">
                 <div className="p-4 border rounded-lg space-y-4">

@@ -66,6 +66,13 @@ export interface ChatCompletionRequest {
   /** Original model name before mapping (used for feature detection like web search, thinking mode) */
   originalModel?: string
   messages: ChatMessage[]
+  /**
+   * FluxMeld stateful-session extension. When present, the proxy restores the
+   * locally persisted conversation before forwarding this turn.
+   */
+  session_id?: string
+  /** Camel-case alias for SDKs that normalize custom request fields. */
+  sessionId?: string
   temperature?: number
   top_p?: number
   n?: number
@@ -225,6 +232,8 @@ export interface ModelsResponse {
  */
 export interface ProxyContext {
   requestId: string
+  /** Optional FluxMeld-local session backing this request. */
+  sessionId?: string
   providerId?: string
   accountId?: string
   model: string
@@ -254,6 +263,8 @@ export interface ForwardResult {
   latency?: number
   providerSessionId?: string
   parentMessageId?: string
+  /** Internal normalized history used for an explicit FluxMeld session. */
+  contextMessages?: ChatMessage[]
   /** Internal prompt-emulated tool failure context; never includes credentials. */
   toolCallingFailure?: {
     code:
