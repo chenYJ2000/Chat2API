@@ -35,6 +35,34 @@ test('standard OpenAI adapter normalizes OpenAI tools and tool_choice', () => {
   assert.equal(result.toolChoice.mode, 'auto')
 })
 
+test('standard OpenAI adapter detects an exact refusal for a declared tool', () => {
+  const adapter = getToolClientAdapter('standard-openai-tools')
+  const allowedTools = new Set(['bash', 'read'])
+
+  assert.deepEqual(
+    adapter.detectToolRefusal?.('Tool bash does not exists.', allowedTools),
+    { toolName: 'bash' },
+  )
+  assert.equal(
+    adapter.detectToolRefusal?.('Tool shell does not exist.', allowedTools),
+    undefined,
+  )
+  assert.equal(
+    adapter.detectToolRefusal?.(
+      'Tool bash does not exists.\n\nThe requested change has already been completed.',
+      allowedTools,
+    ),
+    undefined,
+  )
+  assert.equal(
+    adapter.stripToolRefusalPreamble?.(
+      'Tool bash does not exists.\n\nThe requested change has already been completed.',
+      allowedTools,
+    ),
+    'The requested change has already been completed.',
+  )
+})
+
 test('Cherry Studio MCP adapter preserves exact MCP tool names', () => {
   const adapter = getToolClientAdapter('cherry-studio-mcp')
   const result = adapter.normalizeRequest(request())

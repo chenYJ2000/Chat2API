@@ -194,6 +194,45 @@ test('OpenCode marks a declared-tool refusal for one bounded forced retry', () =
   )
 })
 
+test('standard OpenAI tools marks a declared bash refusal for one bounded forced retry', () => {
+  const engine = new ToolCallingEngine({ clientAdapterId: 'standard-openai-tools' })
+  const transformed = engine.transformRequest({
+    request: request({
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'bash',
+          parameters: {
+            type: 'object',
+            properties: { command: { type: 'string' } },
+            required: ['command'],
+          },
+        },
+      }],
+    }),
+    provider,
+    actualModel: 'Qwen3.6-Plus',
+  })
+  const result: any = {
+    choices: [{
+      message: { role: 'assistant', content: 'Tool bash does not exists.' },
+      finish_reason: 'stop',
+    }],
+  }
+
+  assert.throws(
+    () => engine.applyNonStreamResponse(result, transformed.plan),
+    (error: unknown) => (
+      error instanceof ToolCallingResponseError
+      && error.code === 'missing_required_call'
+      && error.toolName === 'bash'
+      && error.repairable
+      && error.diagnostics?.toolRefusalDetected === true
+      && error.diagnostics?.refusedToolName === 'bash'
+    ),
+  )
+})
+
 test('OpenCode keeps a substantive answer after a stale tool-refusal preamble', () => {
   const engine = new ToolCallingEngine({ clientAdapterId: 'opencode' })
   const transformed = engine.transformRequest({
